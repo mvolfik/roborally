@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
-use js_sys::{Array, Object, Reflect};
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use js_sys::Array;
+use wasm_bindgen::{intern, prelude::wasm_bindgen, JsCast, JsValue};
 
 /// Transformation matrix
 ///
@@ -174,49 +174,30 @@ pub struct WallsDescription {
     left: bool,
 }
 
-// #[wasm_bindgen(typescript_custom_section)]
-// const ASSET_ARRAY: &'static str = "
-// export type AssetArray = Asset[];
-// ";
-
-// #[wasm_bindgen]
-// extern "C" {
-//     #[wasm_bindgen(typescript_type = "AssetArray")]
-//     pub type AssetArray;
-// }
-
-// #[wasm_bindgen]
-// #[derive(Clone)]
-struct Asset {
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct Asset {
     uri: String,
     transform: Transform,
 }
 
-// #[wasm_bindgen]
-impl Asset {
-    //     #[wasm_bindgen(getter)]
-    //     pub fn uri(&self) -> String {
-    //         self.uri.to_owned()
-    //     }
-    //     #[wasm_bindgen(getter)]
-    #[must_use]
-    fn transform_string(&self) -> String {
-        self.transform.to_string()
-    }
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Array<Asset>")]
+    pub type AssetArray;
 }
 
-impl From<&Asset> for JsValue {
+#[wasm_bindgen]
+impl Asset {
+    #[wasm_bindgen(getter)]
     #[must_use]
-    fn from(asset: &Asset) -> Self {
-        let obj = Object::new();
-        Reflect::set(&obj, &"uri".into(), &asset.uri.clone().into()).unwrap();
-        Reflect::set(
-            &obj,
-            &"transform_string".into(),
-            &asset.transform_string().into(),
-        )
-        .unwrap();
-        obj.into()
+    pub fn uri(&self) -> String {
+        self.uri.clone()
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn transform_string(&self) -> String {
+        self.transform.to_string()
     }
 }
 
@@ -230,20 +211,20 @@ pub struct Tile {
 #[wasm_bindgen]
 impl Tile {
     #[must_use]
-    pub fn get_assets(&self) -> Array {
+    pub fn get_assets(&self) -> AssetArray {
         use BeltEnd::*;
         use TileType::*;
 
         let mut assets = match self.typ {
             Void => vec![Asset {
-                uri: "void.png".to_string(),
+                uri: intern("void.png").to_string(),
                 transform: Transform {
                     flip_x: false,
                     rotation: None,
                 },
             }],
             Floor => vec![Asset {
-                uri: "floor.png".to_string(),
+                uri: intern("floor.png").to_string(),
                 transform: Transform {
                     flip_x: false,
                     rotation: None,
@@ -254,11 +235,7 @@ impl Tile {
                     uri: format!(
                         "{}-belt-{}.png",
                         if is_fast { "fast" } else { "slow" },
-                        if end == Straight {
-                            "straight"
-                        } else {
-                            "turn"
-                        }
+                        if end == Straight { "straight" } else { "turn" }
                     ),
                     transform: Transform {
                         flip_x: end == BeltEnd::TurnLeft,
@@ -267,7 +244,7 @@ impl Tile {
                 }]
             }
             Rotation(is_clockwise) => vec![Asset {
-                uri: "rotate.png".to_string(),
+                uri: intern("rotate.png").to_string(),
                 transform: Transform {
                     flip_x: !is_clockwise,
                     rotation: None,
@@ -275,7 +252,7 @@ impl Tile {
             }],
             PushPanel(dir, a, b, c, d, e) => {
                 let assets = vec![Asset {
-                    uri: "push-panel.png".to_string(),
+                    uri: intern("push-panel.png").to_string(),
                     transform: Transform {
                         flip_x: false,
                         rotation: dir.get_rotation(),
@@ -302,7 +279,7 @@ impl Tile {
         ] {
             if is_wall {
                 assets.push(Asset {
-                    uri: "wall.png".to_string(),
+                    uri: intern("wall.png").to_string(),
                     transform: Transform {
                         flip_x: false,
                         rotation: dir.get_rotation(),
@@ -311,9 +288,10 @@ impl Tile {
             }
         }
         assets
-            .iter()
+            .into_iter()
             .map::<JsValue, _>(std::convert::Into::into)
-            .collect()
+            .collect::<Array>()
+            .unchecked_into()
     }
 }
 
