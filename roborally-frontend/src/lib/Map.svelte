@@ -35,7 +35,7 @@
               hovered = { x, y };
             }}
           >
-            {#each [tile.get_assets()] as asset, i}
+            {#each tile.get_assets() as asset}
               {@const assetUri = getAsset(asset.uri)}
               {#if assetUri !== undefined}
                 <img

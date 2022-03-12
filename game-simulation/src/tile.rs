@@ -1,6 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
-use wasm_bindgen::prelude::wasm_bindgen;
+use js_sys::{Array, Object, Reflect};
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 /// Transformation matrix
 ///
@@ -179,22 +180,35 @@ pub struct WallsDescription {
 //     pub type AssetArray;
 // }
 
-#[wasm_bindgen]
-#[derive(Clone)]
-pub struct Asset {
+// #[wasm_bindgen]
+// #[derive(Clone)]
+struct Asset {
     uri: String,
     transform: Transform,
 }
 
-#[wasm_bindgen]
+// #[wasm_bindgen]
 impl Asset {
-    #[wasm_bindgen(getter)]
-    pub fn uri(&self) -> String {
-        self.uri.to_owned()
-    }
-    #[wasm_bindgen(getter)]
-    pub fn transform_string(&self) -> String {
+    //     #[wasm_bindgen(getter)]
+    //     pub fn uri(&self) -> String {
+    //         self.uri.to_owned()
+    //     }
+    //     #[wasm_bindgen(getter)]
+    fn transform_string(&self) -> String {
         self.transform.to_string()
+    }
+}
+
+impl From<&Asset> for JsValue {
+    fn from(asset: &Asset) -> Self {
+        let obj = Object::new();
+        Reflect::set(&obj, &"uri".into(), &asset.uri.clone().into()).unwrap();
+        Reflect::set(
+            &obj,
+            &"transform_string".into(),
+            &asset.transform_string().into(),
+        ).unwrap();
+        obj.into()
     }
 }
 
@@ -207,7 +221,7 @@ pub struct Tile {
 
 #[wasm_bindgen]
 impl Tile {
-    pub fn get_assets(&self) -> Asset {
+    pub fn get_assets(&self) -> Array {
         use BeltEnd::*;
         use TileType::*;
         let mut assets = match self.typ {
@@ -286,7 +300,7 @@ impl Tile {
                 });
             }
         }
-        assets.get(0).unwrap().clone()
+        assets.iter().map::<JsValue, _>(|x| x.into()).collect()
     }
 }
 
