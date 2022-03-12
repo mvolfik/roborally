@@ -6,6 +6,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::enum_glob_use)]
 #![allow(clippy::many_single_char_names)]
+pub mod store;
 pub mod tile;
 mod utils;
 
