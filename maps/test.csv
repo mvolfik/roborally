@@ -2,3 +2,5 @@ V:d,V,V,F,F,F,V,V,V:d
 Bsr,Bsr,Bsr,Bsrr,Bsd:u,Bsll,Bsl,Bsl,Bsl
 Bsur,V:ul,V:u,V:urd,Bfd,V:uld,V:u,V:ur,Bsul
 Bsu,V:dl,V:dr,F,Bfd,F,V:dl,V:dr,Bsu
+F,F,F,F,F,F,F,F,F
+Pu1,Pr2,Pl345,Pu14,Pu12345,Pu14,Pr345,Pl2,Pu1

@@ -9,38 +9,20 @@ use wasm_bindgen::prelude::wasm_bindgen;
 ///
 /// See https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()
 #[derive(Clone, Copy)]
-struct Transform(f64, f64, f64, f64, bool);
-
-impl Transform {
-    fn combine_with(&self, other: &Self) -> Self {
-        Self(
-            self.0 * other.0 + self.2 * other.1,
-            self.1 * other.0 + self.3 * other.1,
-            self.0 * other.2 + self.2 * other.3,
-            self.1 * other.2 + self.3 * other.3,
-            self.4 ^ other.4,
-        )
-    }
-    fn new() -> Self {
-        Self(1.0, 0.0, 0.0, 1.0, false)
-    }
-    fn flip_x(&self) -> Self {
-        self.combine_with(&Self(-1.0, 0.0, 0.0, 1.0, true))
-    }
-    fn rotate(&self, deg: u32) -> Self {
-        let rad = (deg as f64).to_radians() * if self.4 { -1.0 } else { 1.0 };
-        let (sin, cos) = rad.sin_cos();
-        self.combine_with(&Self(cos, sin, -sin, cos, false))
-    }
+struct Transform {
+    rotation: Option<f64>,
+    flip_x: bool,
 }
 
 impl std::fmt::Display for Transform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "matrix({}, {}, {}, {}, 0, 0)",
-            self.0, self.1, self.2, self.3
-        )
+        if self.flip_x {
+            write!(f, "scaleX(-1)")?;
+        }
+        if let Some(deg) = self.rotation {
+            write!(f, "rotate({}deg)", if !self.flip_x { deg } else { -deg })?;
+        }
+        Ok(())
     }
 }
 
@@ -65,18 +47,18 @@ impl Direction {
     }
 
     /// By default, all directed tiles should point up
-    fn get_degrees(&self) -> u32 {
+    fn get_rotation(&self) -> Option<f64> {
         use Direction::*;
         match self {
-            Up => 0,
-            Right => 90,
-            Down => 180,
-            Left => 270,
+            Up => None,
+            Right => Some(90.0),
+            Down => Some(180.0),
+            Left => Some(-90.0),
         }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum BeltEnd {
     /// ''
     Straight,
@@ -132,17 +114,18 @@ impl TileType {
                 Some(_) => return Err("Unknown belt type".to_string()),
             },
             Some('P') => {
+                let dir = Direction::parse(it)?;
                 let mut last_char = '0';
                 let mut digits = Vec::new();
                 while let Some(d) = it.next_if(|c| {
                     let prev_char = last_char;
                     last_char = *c;
-                    c > &prev_char && c <= &'6'
+                    c > &prev_char && c <= &'5'
                 }) {
                     digits.push(d);
                 }
                 PushPanel(
-                    Direction::parse(it)?,
+                    dir,
                     digits.contains(&'1'),
                     digits.contains(&'2'),
                     digits.contains(&'3'),
@@ -230,18 +213,19 @@ impl Tile {
         let mut assets = match self.typ {
             Void => vec![Asset {
                 uri: "void.png".to_string(),
-                transform: Transform::new(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: None,
+                },
             }],
             Floor => vec![Asset {
                 uri: "floor.png".to_string(),
-                transform: Transform::new(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: None,
+                },
             }],
             Belt(is_fast, dir, end) => {
-                let mut transform = Transform::new();
-                if let TurnLeft = end {
-                    transform = transform.flip_x();
-                }
-                transform = transform.rotate(dir.get_degrees());
                 vec![Asset {
                     uri: format!(
                         "{}-belt-{}.png",
@@ -252,41 +236,53 @@ impl Tile {
                             "turn"
                         }
                     ),
-                    transform,
+                    transform: Transform {
+                        flip_x: end == BeltEnd::TurnLeft,
+                        rotation: dir.get_rotation(),
+                    },
                 }]
             }
-            Rotation(true) => vec![Asset {
+            Rotation(is_clockwise) => vec![Asset {
                 uri: "rotate.png".to_string(),
-                transform: Transform::new(),
-            }],
-            Rotation(false) => vec![Asset {
-                uri: "rotate.png".to_string(),
-                transform: Transform::new().flip_x(),
+                transform: Transform {
+                    flip_x: !is_clockwise,
+                    rotation: None,
+                },
             }],
             PushPanel(dir, a, b, c, d, e) => {
                 let assets = vec![Asset {
                     uri: "push-panel.png".to_string(),
-                    transform: Transform::new().rotate(dir.get_degrees()),
+                    transform: Transform {
+                        flip_x: false,
+                        rotation: dir.get_rotation(),
+                    },
                 }];
-                for (_i, is_active) in [a, b, c, d, e].iter().enumerate() {
-                    if *is_active {
-                        todo!()
-                    }
-                }
+                let _active_rounds: Vec<_> = [a, b, c, d, e]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, is_active)| if *is_active { Some(i) } else { None })
+                    .collect();
+                // assets.extend(active_rounds.iter().map(|i| Asset {
+                //     uri: format!("number-{}.png", i + 1),
+                //     transform: todo!(),
+                // }));
                 assets
             }
             Lasers(_, _) => todo!(),
         };
-        for (is_wall, degrees) in [
-            (self.walls.up, 0),
-            (self.walls.right, 90),
-            (self.walls.down, 180),
-            (self.walls.left, 270),
+        for (is_wall, dir) in [
+            (self.walls.up, Direction::Up),
+            (self.walls.right, Direction::Right),
+            (self.walls.down, Direction::Down),
+            (self.walls.left, Direction::Left),
         ] {
             if is_wall {
                 assets.push(Asset {
                     uri: "wall.png".to_string(),
-                    transform: Transform::new().rotate(degrees),
+                    transform: Transform {
+                        flip_x: false,
+                        rotation: dir.get_rotation(),
+                    },
                 });
             }
         }

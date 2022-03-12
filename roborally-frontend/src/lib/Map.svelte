@@ -9,8 +9,8 @@
   function getAsset(name: string): string {
     return (
       assets["../assets/textures/" + name]?.default ??
-      (console.warn(`Unknown asset ${name}, falling back to void`),
-      assets["../assets/textures/void.png"].default)
+      (console.warn(`Unknown asset ${name}, using floor as fallback`),
+      assets["../assets/textures/floor.png"].default)
     );
   }
 
@@ -40,7 +40,6 @@
               {#if assetUri !== undefined}
                 <img
                   style:transform={asset.transform_string}
-                  style:z-index={i + 10}
                   src={assetUri}
                   alt=""
                 />
@@ -81,7 +80,6 @@
   div.hoverMarker {
     height: 100%;
     width: 100%;
-    z-index: 50;
     outline: 2px dashed red;
     outline-offset: -2px;
   }
