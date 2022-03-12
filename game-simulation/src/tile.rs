@@ -49,7 +49,7 @@ impl Direction {
 
     /// By default, all directed tiles should point up
     #[must_use]
-    fn get_rotation(self) -> Option<f64> {
+    const fn get_rotation(self) -> Option<f64> {
         use Direction::*;
         match self {
             Up => None,
@@ -254,7 +254,7 @@ impl Tile {
                     uri: format!(
                         "{}-belt-{}.png",
                         if is_fast { "fast" } else { "slow" },
-                        if let Straight = end {
+                        if end == Straight {
                             "straight"
                         } else {
                             "turn"

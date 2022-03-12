@@ -1,3 +1,5 @@
+#![warn(clippy::nursery)]
+#![allow(clippy::use_self)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
@@ -39,11 +41,13 @@ impl GameMap {
         }
         self.tiles.get(y * self.width + x).copied()
     }
+    #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
+    #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn height(&self) -> usize {
@@ -69,7 +73,7 @@ impl GameMap {
                 width = Some(this_line_width);
             }
         }
-        Ok(GameMap {
+        Ok(Self {
             tiles,
             width: width.ok_or_else(|| "No tiles found".to_string())?,
             height,
