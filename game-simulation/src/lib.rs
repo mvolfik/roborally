@@ -1,5 +1,9 @@
-// #![warn(clippy::all)]
+#![warn(clippy::pedantic)]
 #![allow(clippy::unused_unit)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::enum_glob_use)]
+#![allow(clippy::many_single_char_names)]
 pub mod tile;
 mod utils;
 
@@ -28,6 +32,7 @@ pub struct GameMap {
 
 #[wasm_bindgen]
 impl GameMap {
+    #[must_use]
     pub fn get_tile(&self, x: usize, y: usize) -> Option<Tile> {
         if x >= self.width || y >= self.height {
             return None;
@@ -35,10 +40,12 @@ impl GameMap {
         self.tiles.get(y * self.width + x).copied()
     }
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn height(&self) -> usize {
         self.height
     }
@@ -59,7 +66,7 @@ impl GameMap {
                     return Err("Lines must contain same number of tiles".to_string());
                 }
             } else {
-                width = Some(this_line_width)
+                width = Some(this_line_width);
             }
         }
         Ok(GameMap {

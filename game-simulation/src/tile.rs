@@ -8,7 +8,7 @@ use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 /// (0, 2)
 /// (1, 3)
 ///
-/// See https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()
+/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
 #[derive(Clone, Copy)]
 struct Transform {
     rotation: Option<f64>,
@@ -21,7 +21,7 @@ impl std::fmt::Display for Transform {
             write!(f, "scaleX(-1)")?;
         }
         if let Some(deg) = self.rotation {
-            write!(f, "rotate({}deg)", if !self.flip_x { deg } else { -deg })?;
+            write!(f, "rotate({}deg)", if self.flip_x { -deg } else { deg })?;
         }
         Ok(())
     }
@@ -48,7 +48,8 @@ impl Direction {
     }
 
     /// By default, all directed tiles should point up
-    fn get_rotation(&self) -> Option<f64> {
+    #[must_use]
+    fn get_rotation(self) -> Option<f64> {
         use Direction::*;
         match self {
             Up => None,
@@ -70,6 +71,7 @@ enum BeltEnd {
 }
 
 impl BeltEnd {
+    #[must_use]
     fn parse(it: &mut Peekable<Chars>) -> Self {
         match it.peek() {
             Some('l') => {
@@ -142,6 +144,8 @@ impl TileType {
                 }
                 _ => return Err("Invalid rotation specification".to_string()),
             },
+
+            #[allow(clippy::cast_possible_truncation)]
             Some('L') => Lasers(
                 Direction::parse(it)?,
                 it.next()
@@ -161,6 +165,7 @@ impl TileType {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 pub struct WallsDescription {
     up: bool,
@@ -194,12 +199,14 @@ impl Asset {
     //         self.uri.to_owned()
     //     }
     //     #[wasm_bindgen(getter)]
+    #[must_use]
     fn transform_string(&self) -> String {
         self.transform.to_string()
     }
 }
 
 impl From<&Asset> for JsValue {
+    #[must_use]
     fn from(asset: &Asset) -> Self {
         let obj = Object::new();
         Reflect::set(&obj, &"uri".into(), &asset.uri.clone().into()).unwrap();
@@ -207,7 +214,8 @@ impl From<&Asset> for JsValue {
             &obj,
             &"transform_string".into(),
             &asset.transform_string().into(),
-        ).unwrap();
+        )
+        .unwrap();
         obj.into()
     }
 }
@@ -221,9 +229,11 @@ pub struct Tile {
 
 #[wasm_bindgen]
 impl Tile {
+    #[must_use]
     pub fn get_assets(&self) -> Array {
         use BeltEnd::*;
         use TileType::*;
+
         let mut assets = match self.typ {
             Void => vec![Asset {
                 uri: "void.png".to_string(),
@@ -300,7 +310,10 @@ impl Tile {
                 });
             }
         }
-        assets.iter().map::<JsValue, _>(|x| x.into()).collect()
+        assets
+            .iter()
+            .map::<JsValue, _>(std::convert::Into::into)
+            .collect()
     }
 }
 
