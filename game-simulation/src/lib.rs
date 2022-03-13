@@ -10,8 +10,9 @@ pub mod store;
 pub mod tile;
 mod utils;
 
-use js_sys::{Array, Object, Reflect};
+use js_sys::{Object, Reflect};
 use std::{collections::HashMap, convert::Into, iter::Peekable, panic, str::Chars};
+use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
 use crate::tile::Tile;
@@ -135,7 +136,7 @@ impl GameMap {
             .ok_or_else(|| "Must specify 'Size' in header".to_string())?;
 
         for name in parsed_props.keys() {
-            warnings.push(format!("Unused prop in header: {}", name))
+            warnings.push(format!("Unused prop in header: {}", name));
         }
 
         let mut tiles = Vec::new();
@@ -171,16 +172,8 @@ impl GameMap {
         };
         let object = Object::new();
         Reflect::set(&object, &"map".into(), &map.into()).unwrap();
-        if warnings.len() > 0 {
-            Reflect::set(
-                &object,
-                &"warnings".into(),
-                &warnings
-                    .into_iter()
-                    .map::<JsValue, _>(Into::into)
-                    .collect::<Array>(),
-            )
-            .unwrap();
+        if !warnings.is_empty() {
+            Reflect::set(&object, &"warnings".into(), &StringArray::from(warnings)).unwrap();
         }
         Ok(object.unchecked_into())
     }

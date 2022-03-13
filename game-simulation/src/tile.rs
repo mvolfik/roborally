@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars};
+use std::{convert::Into, iter::Peekable, str::Chars};
 
 use js_sys::Array;
 use wasm_bindgen::{intern, prelude::wasm_bindgen, JsCast, JsValue};
@@ -186,6 +186,15 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "Array<Asset>")]
     pub type AssetArray;
 }
+impl From<Vec<Asset>> for AssetArray {
+    fn from(assets: Vec<Asset>) -> Self {
+        assets
+            .into_iter()
+            .map(JsValue::from)
+            .collect::<Array>()
+            .unchecked_into()
+    }
+}
 
 #[wasm_bindgen]
 impl Asset {
@@ -287,11 +296,7 @@ impl Tile {
                 });
             }
         }
-        assets
-            .into_iter()
-            .map::<JsValue, _>(std::convert::Into::into)
-            .collect::<Array>()
-            .unchecked_into()
+        assets.into()
     }
 }
 
