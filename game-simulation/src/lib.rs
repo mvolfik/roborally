@@ -170,11 +170,16 @@ impl GameMap {
             width,
             height,
         };
-        let object = Object::new();
-        Reflect::set(&object, &"map".into(), &map.into()).unwrap();
-        if !warnings.is_empty() {
-            Reflect::set(&object, &"warnings".into(), &StringArray::from(warnings)).unwrap();
+        let object = js_object! {
+            &"map".into() => &map.into(),
+            &"warnings".into() =>
+                &if warnings.is_empty() {
+                    JsValue::UNDEFINED
+                } else {
+                    JsValue::from(StringArray::from(warnings))
+                }
         }
+        .unwrap();
         Ok(object.unchecked_into())
     }
 }

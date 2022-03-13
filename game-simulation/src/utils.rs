@@ -16,3 +16,23 @@ impl<T: ToString> From<Vec<T>> for StringArray {
             .unchecked_into()
     }
 }
+
+#[macro_export]
+macro_rules! js_object {
+    { $( $key:expr => $value:expr ),* } => {
+        {
+            let object = Object::new();
+            let mut errs = Vec::new();
+            $(
+                if let Err(e) = Reflect::set(&object, $key, $value) {
+                    errs.push(e);
+                }
+            )*
+            if errs.is_empty() {
+                Ok(object)
+            } else {
+                Err(errs)
+            }
+        }
+    };
+}
