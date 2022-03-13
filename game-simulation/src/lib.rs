@@ -11,7 +11,12 @@ pub mod tile;
 mod utils;
 
 use js_sys::{Object, Reflect};
-use std::{collections::HashMap, convert::Into, iter::Peekable, panic, str::Chars};
+use std::{
+    collections::HashMap,
+    convert::{Into},
+    panic,
+    str::FromStr,
+};
 use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -33,13 +38,18 @@ struct Position {
 }
 
 impl Position {
-    fn parse(it: &mut Peekable<Chars>) -> Result<Self, String> {
-        let x = parse_number(it).ok_or_else(|| "Expected a number (x coordinate)".to_string())?;
-        if it.next() != Some(',') {
-            return Err("Expected ',' after x coordinate".to_string());
+    fn parse(it: &str) -> Result<Self, String> {
+        let mut split = it.split(',');
+        if let (Some(x_str), Some(y_str), None) = (split.next(), split.next(), split.next()) {
+            Ok(Self {
+                x: u32::from_str(x_str)
+                    .map_err(|_e| "Expected a number (x coordinate)".to_string())?,
+                y: u32::from_str(y_str)
+                    .map_err(|_e| "Expected a number (x coordinate)".to_string())?,
+            })
+        } else {
+            Err(format!("Value `{}` doesn't have format `x,y`", it))
         }
-        let y = parse_number(it).ok_or_else(|| "Expected a number (y coordinate)".to_string())?;
-        Ok(Self { x, y })
     }
 }
 
@@ -84,7 +94,7 @@ impl GameMap {
     }
 
     /// First line is a header:
-    /// Size={width},{height};Antenna={x},{y}
+    /// Size={width},{height} Antenna={x},{y}
     ///
     /// Then follow {width} remaining lines
     pub fn parse(s: &str) -> Result<GameMapParseOkResult, String> {
@@ -92,50 +102,31 @@ impl GameMap {
         let mut lines = s.lines();
         let first_line = &mut lines
             .next()
-            .ok_or_else(|| "No lines in input".to_string())?
-            .chars()
-            .peekable();
-        let mut parsed_props = HashMap::new();
-        loop {
-            let mut name = String::new();
-            loop {
-                match first_line.next() {
-                    None => {
-                        return Err("Unexpected EOL".to_string());
-                    }
-                    Some('=') => break,
-                    Some(c) => {
-                        if c.is_ascii_alphabetic() {
-                            name.push(c);
-                        } else {
-                            return Err(format!("Unexpected character: {}", c));
-                        }
-                    }
-                }
-            }
-            if name.is_empty() {
-                return Err("Found zero-length name".to_string());
-            }
-            let pos = Position::parse(first_line)
-                .map_err(|e| format!("Error parsing value for {}: {}", name, e))?;
-            parsed_props.insert(name, pos);
+            .ok_or_else(|| "No lines in input".to_string())?;
 
-            match first_line.next() {
-                None => break,
-                Some(';') => {}
-                Some(_) => {
-                    return Err("Expected ';' after value".to_string());
-                }
+        let mut props = HashMap::new();
+        for propdef in first_line.split(' ') {
+            let mut split = propdef.split('=');
+            if let (Some(name), Some(value), None) = (split.next(), split.next(), split.next()) {
+                props.insert(name, value);
+            } else {
+                return Err(format!(
+                    "Prop definition `{}` doesn't follow format key=value",
+                    propdef
+                ));
             }
         }
         let Position {
             x: width,
             y: height,
-        } = parsed_props
-            .remove("Size")
-            .ok_or_else(|| "Must specify 'Size' in header".to_string())?;
+        } = Position::parse(
+            props
+                .remove("Size")
+                .ok_or_else(|| "Must specify 'Size' in header".to_string())?,
+        )
+        .map_err(|e| format!("Error parsing value for Size: {}", e))?;
 
-        for name in parsed_props.keys() {
+        for name in props.keys() {
             warnings.push(format!("Unused prop in header: {}", name));
         }
 
@@ -182,14 +173,4 @@ impl GameMap {
         .unwrap();
         Ok(object.unchecked_into())
     }
-}
-
-#[must_use]
-fn parse_number(it: &mut Peekable<Chars>) -> Option<u32> {
-    let mut out = it.next()?.to_digit(10)?;
-    while let Some(Some(n)) = it.peek().map(|c| c.to_digit(10)) {
-        it.next();
-        out = out * 10 + n;
-    }
-    Some(out)
 }
