@@ -10,7 +10,7 @@ pub mod store;
 pub mod tile;
 mod utils;
 
-use std::panic;
+use std::{collections::HashMap, iter::Peekable, panic, str::Chars};
 use wasm_bindgen::prelude::*;
 
 use crate::tile::Tile;
@@ -25,59 +25,143 @@ pub fn init_panic_hook() {
 }
 ///// /INIT /////
 
+struct Position {
+    x: u32,
+    y: u32,
+}
+
+impl Position {
+    fn parse(it: &mut Peekable<Chars>) -> Result<Self, String> {
+        let x = parse_number(it).ok_or_else(|| "Expected a number (x coordinate)".to_string())?;
+        if it.next() != Some(',') {
+            return Err("Expected ',' after x coordinate".to_string());
+        }
+        let y = parse_number(it).ok_or_else(|| "Expected a number (y coordinate)".to_string())?;
+        Ok(Self { x, y })
+    }
+}
+
 #[wasm_bindgen]
 pub struct GameMap {
     /// With coordinates starting at top left, index = x * width + y
     tiles: Vec<Tile>,
-    width: usize,
-    height: usize,
+    width: u32,
+    height: u32,
 }
 
 #[wasm_bindgen]
 impl GameMap {
     #[must_use]
-    pub fn get_tile(&self, x: usize, y: usize) -> Option<Tile> {
+    pub fn get_tile(&self, x: u32, y: u32) -> Option<Tile> {
         if x >= self.width || y >= self.height {
             return None;
         }
-        self.tiles.get(y * self.width + x).copied()
+        self.tiles.get((y * self.width + x) as usize).copied()
     }
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn width(&self) -> usize {
+    pub fn width(&self) -> u32 {
         self.width
     }
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn height(&self) -> usize {
+    pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// First line is a header:
+    /// Size={width},{height};Ante
+    ///
+    /// Then follow {width} remaining lines
     pub fn parse(s: &str) -> Result<GameMap, String> {
-        let mut tiles = Vec::new();
-        let mut width = None;
-        let mut height = 0;
-        for line in s.lines() {
-            height += 1;
-            let mut this_line_width = 0;
-            for tile_spec in line.split(',') {
-                this_line_width += 1;
-                tiles.push(Tile::parse(tile_spec.trim())?);
-            }
-            if let Some(w) = width {
-                if this_line_width != w {
-                    return Err("Lines must contain same number of tiles".to_string());
+        let mut lines = s.lines();
+        let first_line = &mut lines
+            .next()
+            .ok_or_else(|| "No lines in input".to_string())?
+            .chars()
+            .peekable();
+        let mut parsed_props = HashMap::new();
+        loop {
+            let mut name = String::new();
+            loop {
+                match first_line.next() {
+                    None => {
+                        return Err("Unexpected EOL".to_string());
+                    }
+                    Some('=') => break,
+                    Some(c) => {
+                        if c.is_ascii_alphabetic() {
+                            name.push(c);
+                        } else {
+                            return Err(format!("Unexpected character: {}", c));
+                        }
+                    }
                 }
-            } else {
-                width = Some(this_line_width);
             }
+            if name.is_empty() {
+                return Err("Found zero-length name".to_string());
+            }
+            let pos = Position::parse(first_line)
+                .map_err(|e| format!("Error parsing value for {}: {}", name, e))?;
+            parsed_props.insert(name, pos);
+
+            match first_line.next() {
+                None => break,
+                Some(';') => {}
+                Some(_) => {
+                    return Err("Expected ';' after value".to_string());
+                }
+            }
+        }
+        let Position {
+            x: width,
+            y: height,
+        } = parsed_props
+            .remove("Size")
+            .ok_or_else(|| "Must specify 'Size' in header".to_string())?;
+
+        let mut tiles = Vec::new();
+        let mut y = 0;
+        for line in lines {
+            let mut x = 0;
+            for tile_spec in line.split(',') {
+                tiles.push(
+                    Tile::parse(tile_spec.trim())
+                        .map_err(|e| format!("Parsing error on tile {},{}: {}", x, y, e))?,
+                );
+                x += 1;
+            }
+
+            if x != width {
+                return Err(format!(
+                    "Line {} contains wrong amount of tiles (found {}, expected width={})",
+                    y, x, width
+                ));
+            }
+            y += 1;
+        }
+        if y != height {
+            return Err(format!(
+                "Wrong amount of tile lines (found {}, expected height={})",
+                y, height
+            ));
         }
         Ok(Self {
             tiles,
-            width: width.ok_or_else(|| "No tiles found".to_string())?,
+            width,
             height,
         })
     }
+}
+
+#[must_use]
+fn parse_number(it: &mut Peekable<Chars>) -> Option<u32> {
+    let mut out = it.next()?.to_digit(10)?;
+    while let Some(Some(n)) = it.peek().map(|c| c.to_digit(10)) {
+        it.next();
+        out = out * 10 + n;
+    }
+    Some(out)
 }
