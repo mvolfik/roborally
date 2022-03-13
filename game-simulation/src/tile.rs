@@ -1,7 +1,8 @@
 use std::{convert::Into, iter::Peekable, str::Chars};
 
-use js_sys::Array;
-use wasm_bindgen::{intern, prelude::wasm_bindgen, JsCast, JsValue};
+use wasm_bindgen::{intern, prelude::wasm_bindgen};
+
+use crate::create_array_type;
 
 /// Transformation matrix
 ///
@@ -181,20 +182,7 @@ pub struct Asset {
     transform: Transform,
 }
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "Array<Asset>")]
-    pub type AssetArray;
-}
-impl From<Vec<Asset>> for AssetArray {
-    fn from(assets: Vec<Asset>) -> Self {
-        assets
-            .into_iter()
-            .map(JsValue::from)
-            .collect::<Array>()
-            .unchecked_into()
-    }
-}
+create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset );
 
 #[wasm_bindgen]
 impl Asset {

@@ -10,13 +10,7 @@ pub mod store;
 pub mod tile;
 mod utils;
 
-use js_sys::{Object, Reflect};
-use std::{
-    collections::HashMap,
-    convert::{Into},
-    panic,
-    str::FromStr,
-};
+use std::{collections::HashMap, convert::Into, panic, str::FromStr};
 use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
