@@ -29,7 +29,7 @@ impl std::fmt::Display for Transform {
 }
 
 #[derive(Clone, Copy)]
-enum Direction {
+pub enum Direction {
     Up,
     Right,
     Down,
@@ -37,13 +37,13 @@ enum Direction {
 }
 
 impl Direction {
-    fn parse(it: &mut Peekable<Chars>) -> Result<Self, String> {
+    pub fn parse(c: char) -> Result<Self, String> {
         use Direction::*;
-        Ok(match it.next() {
-            Some('u') => Up,
-            Some('r') => Right,
-            Some('d') => Down,
-            Some('l') => Left,
+        Ok(match c {
+            'u' => Up,
+            'r' => Right,
+            'd' => Down,
+            'l' => Left,
             _ => return Err("Invalid direction specification".to_string()),
         })
     }
@@ -114,11 +114,18 @@ impl TileType {
             Some('F') => Floor,
             Some('B') => match it.next() {
                 None => return Err("Missing belt type".to_string()),
-                Some(c @ ('f' | 's')) => Belt(c == 'f', Direction::parse(it)?, BeltEnd::parse(it)),
+                Some(c @ ('f' | 's')) => Belt(
+                    c == 'f',
+                    Direction::parse(it.next().ok_or_else(|| "Need belt direction".to_string())?)?,
+                    BeltEnd::parse(it),
+                ),
                 Some(_) => return Err("Unknown belt type".to_string()),
             },
             Some('P') => {
-                let dir = Direction::parse(it)?;
+                let dir = Direction::parse(
+                    it.next()
+                        .ok_or_else(|| "Need push panel direction".to_string())?,
+                )?;
                 let mut last_char = '0';
                 let mut digits = Vec::new();
                 while let Some(d) = it.next_if(|c| {
@@ -148,7 +155,10 @@ impl TileType {
 
             #[allow(clippy::cast_possible_truncation)]
             Some('L') => Lasers(
-                Direction::parse(it)?,
+                Direction::parse(
+                    it.next()
+                        .ok_or_else(|| "Need laser direction".to_string())?,
+                )?,
                 it.next()
                     .and_then(|c| {
                         if c == '0' {

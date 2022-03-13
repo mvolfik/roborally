@@ -6,11 +6,13 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::enum_glob_use)]
 #![allow(clippy::many_single_char_names)]
+#![feature(pattern)]
 pub mod store;
 pub mod tile;
 mod utils;
 
 use std::{collections::HashMap, convert::Into, panic, str::FromStr};
+use tile::Direction;
 use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -26,24 +28,35 @@ pub fn init_panic_hook() {
 }
 ///// /INIT /////
 
-struct Position {
+#[wasm_bindgen]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Position {
     x: u32,
     y: u32,
 }
 
+#[wasm_bindgen]
 impl Position {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn new(x: u32, y: u32) -> Self {
+        Self { x, y }
+    }
     fn parse(it: &str) -> Result<Self, String> {
-        let mut split = it.split(',');
-        if let (Some(x_str), Some(y_str), None) = (split.next(), split.next(), split.next()) {
-            Ok(Self {
-                x: u32::from_str(x_str)
-                    .map_err(|_e| "Expected a number (x coordinate)".to_string())?,
-                y: u32::from_str(y_str)
-                    .map_err(|_e| "Expected a number (x coordinate)".to_string())?,
-            })
-        } else {
-            Err(format!("Value `{}` doesn't have format `x,y`", it))
-        }
+        let (x_str, y_str) = checked_split_in_two(it, ',')
+            .ok_or_else(|| format!("Value `{}` doesn't have format `x,y`", it))?;
+        Ok(Self {
+            x: u32::from_str(x_str).map_err(|_e| "Expected a number (x coordinate)".to_string())?,
+            y: u32::from_str(y_str).map_err(|_e| "Expected a number (x coordinate)".to_string())?,
+        })
+    }
+
+    /// Whether the rectangle [origin, self) contains other
+    #[inline]
+    #[allow(clippy::missing_const_for_fn)]
+    fn contains(self, other: Self) -> bool {
+        other.x < self.x && other.y < self.y
     }
 }
 
@@ -51,8 +64,11 @@ impl Position {
 pub struct GameMap {
     /// With coordinates starting at top left, index = x * width + y
     tiles: Vec<Tile>,
-    width: u32,
-    height: u32,
+    size: Position,
+    antenna: Position,
+    reboot_token: (Position, Direction),
+    checkpoints: Vec<Position>,
+    spawn_points: Vec<Position>,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -69,28 +85,32 @@ extern "C" {
 impl GameMap {
     #[must_use]
     pub fn get_tile(&self, x: u32, y: u32) -> Option<Tile> {
-        if x >= self.width || y >= self.height {
+        if x >= self.size.x || y >= self.size.y {
             return None;
         }
-        self.tiles.get((y * self.width + x) as usize).copied()
+        self.tiles.get((y * self.size.x + x) as usize).copied()
     }
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn width(&self) -> u32 {
-        self.width
+        self.size.x
     }
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn height(&self) -> u32 {
-        self.height
+        self.size.y
     }
 
     /// First line is a header:
-    /// Size={width},{height} Antenna={x},{y}
+    /// header : {prop}( {prop})*
+    /// prop   : Size={pos} | Antenna={pos} | Reboot={pos}:{dir} | Checkpoints={list} | Spawnpoints={list}
+    /// list   : {pos}(;{pos})*
+    /// pos    : <x>,<y>
+    /// dir    : u | r | d | l
     ///
-    /// Then follow {width} remaining lines
+    /// Then follow Size.y remaining lines
     pub fn parse(s: &str) -> Result<GameMapParseOkResult, String> {
         let mut warnings = Vec::new();
         let mut lines = s.lines();
@@ -100,25 +120,84 @@ impl GameMap {
 
         let mut props = HashMap::new();
         for propdef in first_line.split(' ') {
-            let mut split = propdef.split('=');
-            if let (Some(name), Some(value), None) = (split.next(), split.next(), split.next()) {
-                props.insert(name, value);
-            } else {
-                return Err(format!(
+            let (name, value) = checked_split_in_two(propdef, '=').ok_or_else(|| {
+                format!(
                     "Prop definition `{}` doesn't follow format key=value",
                     propdef
-                ));
-            }
+                )
+            })?;
+            props.insert(name, value);
         }
-        let Position {
-            x: width,
-            y: height,
-        } = Position::parse(
+        let size = Position::parse(
             props
                 .remove("Size")
-                .ok_or_else(|| "Must specify 'Size' in header".to_string())?,
+                .ok_or_else(|| "Must specify 'Size' (grid dimensions) in header".to_string())?,
         )
         .map_err(|e| format!("Error parsing value for Size: {}", e))?;
+        if size.x == 0 || size.y == 0 {
+            return Err("Map dimensions must be non-zero".to_string());
+        }
+
+        let antenna =
+            Position::parse(props.remove("Antenna").ok_or_else(|| {
+                "Must specify 'Antenna' (antenna position) in header".to_string()
+            })?)
+            .map_err(|e| format!("Error parsing value for Antenna: {}", e))?;
+        if !size.contains(antenna) {
+            return Err("Antenna must be within map bounds".to_string());
+        }
+
+        let reboot_token = {
+            let prop = checked_split_in_two(
+                props.remove("Reboot").ok_or_else(|| {
+                    "Must specify 'Reboot' (reboot token position) in header".to_string()
+                })?,
+                ':',
+            )
+            .ok_or_else(|| "Reboot token must be specified as `position:direction`".to_string())?;
+            let dir_spec = prop.1;
+            if dir_spec.len() != 1 {
+                return Err("Only need 1 character for direction".to_string());
+            }
+
+            let pos = Position::parse(prop.0)
+                .map_err(|e| format!("Error parsing value for Reboot: {}", e))?;
+            if !size.contains(pos) {
+                return Err("Reboot token must be within map bounds".to_string());
+            }
+            let dir = Direction::parse(prop.1.chars().next().unwrap())?;
+            (pos, dir)
+        };
+
+        let checkpoints = props
+            .remove("Checkpoints")
+            .ok_or_else(|| "Must specify 'Checkpoints' in header".to_string())?
+            .split(';')
+            .enumerate()
+            .map(|(i, pos_str)| {
+                let pos = Position::parse(pos_str)
+                    .map_err(|e| format!("Error parsing value for Checkpoints[{}]: {}", i, e))?;
+                if !size.contains(pos) {
+                    return Err("Checkpoint must be within map bounds".to_string());
+                }
+                Ok(pos)
+            })
+            .collect::<Result<_, _>>()?;
+
+        let spawn_points = props
+            .remove("Spawnpoints")
+            .ok_or_else(|| "Must specify 'Spawnpoints' in header".to_string())?
+            .split(';')
+            .enumerate()
+            .map(|(i, pos_str)| {
+                let pos = Position::parse(pos_str)
+                    .map_err(|e| format!("Error parsing value for Spawnpoints[{}]: {}", i, e))?;
+                if !size.contains(pos) {
+                    return Err("Spawn point must be within map bounds".to_string());
+                }
+                Ok(pos)
+            })
+            .collect::<Result<_, _>>()?;
 
         for name in props.keys() {
             warnings.push(format!("Unused prop in header: {}", name));
@@ -136,24 +215,27 @@ impl GameMap {
                 x += 1;
             }
 
-            if x != width {
+            if x != size.x {
                 return Err(format!(
                     "Line {} contains wrong amount of tiles (found {}, expected width={})",
-                    y, x, width
+                    y, x, size.x
                 ));
             }
             y += 1;
         }
-        if y != height {
+        if y != size.y {
             return Err(format!(
                 "Wrong amount of tile lines (found {}, expected height={})",
-                y, height
+                y, size.y
             ));
         }
         let map = Self {
             tiles,
-            width,
-            height,
+            size,
+            antenna,
+            reboot_token,
+            checkpoints,
+            spawn_points,
         };
         let object = js_object! {
             &"map".into() => &map.into(),
@@ -166,5 +248,17 @@ impl GameMap {
         }
         .unwrap();
         Ok(object.unchecked_into())
+    }
+}
+
+fn checked_split_in_two<'a, T: std::str::pattern::Pattern<'a>>(
+    s: &'a str,
+    delimiter: T,
+) -> Option<(&'a str, &'a str)> {
+    let mut split = s.split(delimiter);
+    if let (Some(a), Some(b), None) = (split.next(), split.next(), split.next()) {
+        Some((a, b))
+    } else {
+        None
     }
 }

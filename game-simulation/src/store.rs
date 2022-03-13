@@ -54,6 +54,7 @@ impl Writable {
     #[wasm_bindgen(constructor)]
     #[must_use]
     pub fn new(value: JsValue) -> Self {
+        #[allow(clippy::default_trait_access)]
         Self {
             value,
             subscribers: Default::default(),
