@@ -10,8 +10,9 @@ pub mod store;
 pub mod tile;
 mod utils;
 
-use std::{collections::HashMap, iter::Peekable, panic, str::Chars};
-use wasm_bindgen::prelude::*;
+use js_sys::{Array, Object, Reflect};
+use std::{collections::HashMap, convert::Into, iter::Peekable, panic, str::Chars};
+use wasm_bindgen::{prelude::*, JsCast};
 
 use crate::tile::Tile;
 
@@ -49,6 +50,16 @@ pub struct GameMap {
     height: u32,
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_SECTION_GAMEMAP_PARSE_OK_RESULT: &'static str =
+    "export type GameMapParseOkResult = { warnings?: Array<string>; map: GameMap; };";
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GameMapParseOkResult")]
+    pub type GameMapParseOkResult;
+}
+
 #[wasm_bindgen]
 impl GameMap {
     #[must_use]
@@ -72,10 +83,11 @@ impl GameMap {
     }
 
     /// First line is a header:
-    /// Size={width},{height};Ante
+    /// Size={width},{height};Antenna={x},{y}
     ///
     /// Then follow {width} remaining lines
-    pub fn parse(s: &str) -> Result<GameMap, String> {
+    pub fn parse(s: &str) -> Result<GameMapParseOkResult, String> {
+        let mut warnings = Vec::new();
         let mut lines = s.lines();
         let first_line = &mut lines
             .next()
@@ -122,6 +134,10 @@ impl GameMap {
             .remove("Size")
             .ok_or_else(|| "Must specify 'Size' in header".to_string())?;
 
+        for name in parsed_props.keys() {
+            warnings.push(format!("Unused prop in header: {}", name))
+        }
+
         let mut tiles = Vec::new();
         let mut y = 0;
         for line in lines {
@@ -148,11 +164,25 @@ impl GameMap {
                 y, height
             ));
         }
-        Ok(Self {
+        let map = Self {
             tiles,
             width,
             height,
-        })
+        };
+        let object = Object::new();
+        Reflect::set(&object, &"map".into(), &map.into()).unwrap();
+        if warnings.len() > 0 {
+            Reflect::set(
+                &object,
+                &"warnings".into(),
+                &warnings
+                    .into_iter()
+                    .map::<JsValue, _>(Into::into)
+                    .collect::<Array>(),
+            )
+            .unwrap();
+        }
+        Ok(object.unchecked_into())
     }
 }
 
