@@ -74,7 +74,7 @@
   }
   div.tile > * {
     position: absolute;
-    transform-origin: center;
+    transform-origin: 32px 32px;
   }
   div.hoverMarker {
     height: 100%;

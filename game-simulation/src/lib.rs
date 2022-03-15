@@ -109,20 +109,22 @@ impl GameMap {
                 uri: "antenna.png".to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: None,
+                    rotate: None,
+                    translate: None,
                 },
             });
         }
         if self.reboot_token.0 == this_pos {
             assets.push(Asset {
-                uri: "reboot_token.png".to_string(),
+                uri: "reboot-token.png".to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: self.reboot_token.1.get_rotation(),
+                    rotate: self.reboot_token.1.get_rotation(),
+                    translate: None,
                 },
             });
         }
-        if let Some((_i, _)) = self
+        if let Some((i, _)) = self
             .checkpoints
             .iter()
             .enumerate()
@@ -132,10 +134,18 @@ impl GameMap {
                 uri: "checkpoint.png".to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: None,
+                    rotate: None,
+                    translate: None,
                 },
             });
-            //assets.push(todo!("checkpoint number"))
+            assets.push(Asset {
+                uri: format!("number-{}.png", i + 1),
+                transform: Transform {
+                    flip_x: false,
+                    rotate: None,
+                    translate: Some((30.0, 30.0)),
+                },
+            });
         }
         if let Some((_i, (_, dir))) = self
             .spawn_points
@@ -144,21 +154,20 @@ impl GameMap {
             .find(|(_, (pos, _))| pos == &this_pos)
         {
             assets.push(Asset {
-                uri: "spawn_point.png".to_string(),
+                uri: "spawn-point.png".to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: dir.get_rotation(),
+                    rotate: dir.get_rotation(),
+                    translate: None,
                 },
             });
-            //assets.push(todo!("checkpoint number"))
         }
         Some(assets.into())
     }
 
     /// First line is a header:
     /// header : {prop}( {prop})*
-    /// prop   : Size={pos} | Antenna={pos} | Reboot={pos}:{dir} | Checkpoints={list} | Spawnpoints={list}
-    /// list   : {pos}(;{pos})*
+    /// prop   : Size={pos} | Antenna={pos} | Reboot={pos}:{dir} | Checkpoints=[{pos}];+ | Spawnpoints=[{pos}:{dir}];+
     /// pos    : <x>,<y>
     /// dir    : u | r | d | l
     ///

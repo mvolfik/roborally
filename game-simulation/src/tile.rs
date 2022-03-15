@@ -12,8 +12,9 @@ use crate::create_array_type;
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
 #[derive(Clone, Copy)]
 pub(crate) struct Transform {
-    pub(crate) rotation: Option<f64>,
+    pub(crate) rotate: Option<f64>,
     pub(crate) flip_x: bool,
+    pub(crate) translate: Option<(f64, f64)>,
 }
 
 impl std::fmt::Display for Transform {
@@ -21,8 +22,16 @@ impl std::fmt::Display for Transform {
         if self.flip_x {
             write!(f, "scaleX(-1)")?;
         }
-        if let Some(deg) = self.rotation {
+        if let Some(deg) = self.rotate {
             write!(f, "rotate({}deg)", if self.flip_x { -deg } else { deg })?;
+        }
+        if let Some((x, y)) = self.translate {
+            write!(
+                f,
+                "translate({}px,{}px)",
+                if self.flip_x { -x } else { x },
+                y
+            )?;
         }
         Ok(())
     }
@@ -98,7 +107,7 @@ enum TileType {
     /// bool = is_fast
     Belt(bool, Direction, BeltEnd),
     /// `P{dir}[1][2][3][4][5]`
-    PushPanel(Direction, bool, bool, bool, bool, bool),
+    PushPanel(Direction, [bool; 5]),
     /// `R(cw|ccw)`
     /// bool = is_clockwise
     Rotation(bool),
@@ -126,23 +135,20 @@ impl TileType {
                     it.next()
                         .ok_or_else(|| "Need push panel direction".to_string())?,
                 )?;
-                let mut last_char = '0';
-                let mut digits = Vec::new();
-                while let Some(d) = it.next_if(|c| {
-                    let prev_char = last_char;
-                    last_char = *c;
-                    c > &prev_char && c <= &'5'
-                }) {
-                    digits.push(d);
+                let mut active_rounds = [false; 5];
+                let mut last_digit = 0;
+                loop {
+                    if let Some(Some(d)) = it.peek().map(|c| c.to_digit(10)) {
+                        if d > last_digit && d <= 5 {
+                            *active_rounds.get_mut(d as usize - 1).unwrap() = true;
+                            last_digit = d;
+                            it.next();
+                            continue;
+                        }
+                    }
+                    break;
                 }
-                PushPanel(
-                    dir,
-                    digits.contains(&'1'),
-                    digits.contains(&'2'),
-                    digits.contains(&'3'),
-                    digits.contains(&'4'),
-                    digits.contains(&'5'),
-                )
+                PushPanel(dir, active_rounds)
             }
             Some('R') => match (it.next(), it.next(), it.peek()) {
                 (Some('c'), Some('w'), _) => Rotation(true),
@@ -225,14 +231,16 @@ impl Tile {
                 uri: intern("void.png").to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: None,
+                    rotate: None,
+                    translate: None,
                 },
             }],
             Floor => vec![Asset {
                 uri: intern("floor.png").to_string(),
                 transform: Transform {
                     flip_x: false,
-                    rotation: None,
+                    rotate: None,
+                    translate: None,
                 },
             }],
             Belt(is_fast, dir, end) => {
@@ -244,7 +252,8 @@ impl Tile {
                     ),
                     transform: Transform {
                         flip_x: end == BeltEnd::TurnLeft,
-                        rotation: dir.get_rotation(),
+                        rotate: dir.get_rotation(),
+                        translate: None,
                     },
                 }]
             }
@@ -252,26 +261,32 @@ impl Tile {
                 uri: intern("rotate.png").to_string(),
                 transform: Transform {
                     flip_x: !is_clockwise,
-                    rotation: None,
+                    rotate: None,
+                    translate: None,
                 },
             }],
-            PushPanel(dir, a, b, c, d, e) => {
-                let assets = vec![Asset {
+            PushPanel(dir, active_rounds) => {
+                let mut assets = vec![Asset {
                     uri: intern("push-panel.png").to_string(),
                     transform: Transform {
                         flip_x: false,
-                        rotation: dir.get_rotation(),
+                        rotate: dir.get_rotation(),
+                        translate: None,
                     },
                 }];
-                let _active_rounds: Vec<_> = [a, b, c, d, e]
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, is_active)| if *is_active { Some(i) } else { None })
-                    .collect();
-                // assets.extend(active_rounds.iter().map(|i| Asset {
-                //     uri: format!("number-{}.png", i + 1),
-                //     transform: todo!(),
-                // }));
+                for (i, is_active) in active_rounds.iter().enumerate() {
+                    assets.push(Asset {
+                        uri: format!(
+                            "push-panel-indicator-{}.png",
+                            if *is_active { "active" } else { "inactive" }
+                        ),
+                        transform: Transform {
+                            flip_x: false,
+                            translate: Some(((7 + i * 10) as f64, 6.0)),
+                            rotate: dir.get_rotation(),
+                        },
+                    });
+                }
                 assets
             }
             Lasers(_, _) => todo!(),
@@ -287,7 +302,8 @@ impl Tile {
                     uri: intern("wall.png").to_string(),
                     transform: Transform {
                         flip_x: false,
-                        rotation: dir.get_rotation(),
+                        rotate: dir.get_rotation(),
+                        translate: None,
                     },
                 });
             }
