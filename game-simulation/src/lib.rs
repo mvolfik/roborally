@@ -16,7 +16,7 @@ use tile::{AssetArray, Direction};
 use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
-use crate::tile::Tile;
+use crate::tile::{Asset, Tile, Transform};
 
 ///// INIT /////
 #[global_allocator]
@@ -64,7 +64,7 @@ pub struct GameMap {
     antenna: Position,
     reboot_token: (Position, Direction),
     checkpoints: Vec<Position>,
-    spawn_points: Vec<Position>,
+    spawn_points: Vec<(Position, Direction)>,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -101,7 +101,57 @@ impl GameMap {
 
     #[must_use]
     pub fn get_assets_at(&self, x: u32, y: u32) -> Option<AssetArray> {
-        let assets = self.get_tile(x, y)?.get_assets();
+        let mut assets = self.get_tile(x, y)?.get_assets();
+
+        let this_pos = Position { x, y };
+        if self.antenna == this_pos {
+            assets.push(Asset {
+                uri: "antenna.png".to_string(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: None,
+                },
+            });
+        }
+        if self.reboot_token.0 == this_pos {
+            assets.push(Asset {
+                uri: "reboot_token.png".to_string(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: self.reboot_token.1.get_rotation(),
+                },
+            });
+        }
+        if let Some((_i, _)) = self
+            .checkpoints
+            .iter()
+            .enumerate()
+            .find(|(_, pos)| pos == &&this_pos)
+        {
+            assets.push(Asset {
+                uri: "checkpoint.png".to_string(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: None,
+                },
+            });
+            //assets.push(todo!("checkpoint number"))
+        }
+        if let Some((_i, (_, dir))) = self
+            .spawn_points
+            .iter()
+            .enumerate()
+            .find(|(_, (pos, _))| pos == &this_pos)
+        {
+            assets.push(Asset {
+                uri: "spawn_point.png".to_string(),
+                transform: Transform {
+                    flip_x: false,
+                    rotation: dir.get_rotation(),
+                },
+            });
+            //assets.push(todo!("checkpoint number"))
+        }
         Some(assets.into())
     }
 
@@ -150,24 +200,23 @@ impl GameMap {
         }
 
         let reboot_token = {
-            let prop = checked_split_in_two(
+            let (pos_spec, dir_spec) = checked_split_in_two(
                 props.remove("Reboot").ok_or_else(|| {
                     "Must specify 'Reboot' (reboot token position) in header".to_string()
                 })?,
                 ':',
             )
             .ok_or_else(|| "Reboot token must be specified as `position:direction`".to_string())?;
-            let dir_spec = prop.1;
             if dir_spec.len() != 1 {
                 return Err("Only need 1 character for direction".to_string());
             }
 
-            let pos = Position::parse(prop.0)
+            let pos = Position::parse(pos_spec)
                 .map_err(|e| format!("Error parsing value for Reboot: {}", e))?;
             if !size.contains(pos) {
                 return Err("Reboot token must be within map bounds".to_string());
             }
-            let dir = Direction::parse(prop.1.chars().next().unwrap())?;
+            let dir = Direction::parse(dir_spec.chars().next().unwrap())?;
             (pos, dir)
         };
 
@@ -191,13 +240,19 @@ impl GameMap {
             .ok_or_else(|| "Must specify 'Spawnpoints' in header".to_string())?
             .split(';')
             .enumerate()
-            .map(|(i, pos_str)| {
-                let pos = Position::parse(pos_str)
+            .map(|(i, spec)| {
+                let (pos_spec, dir_spec) = checked_split_in_two(spec, ':')
+                    .ok_or_else(|| "Spawn must be specified as `position:direction`".to_string())?;
+                let pos = Position::parse(pos_spec)
                     .map_err(|e| format!("Error parsing value for Spawnpoints[{}]: {}", i, e))?;
                 if !size.contains(pos) {
                     return Err("Spawn point must be within map bounds".to_string());
                 }
-                Ok(pos)
+                if dir_spec.len() != 1 {
+                    return Err("Only need 1 character for direction".to_string());
+                }
+                let dir = Direction::parse(dir_spec.chars().next().unwrap())?;
+                Ok((pos, dir))
             })
             .collect::<Result<_, _>>()?;
 

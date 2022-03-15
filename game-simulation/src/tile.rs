@@ -11,9 +11,9 @@ use crate::create_array_type;
 ///
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
 #[derive(Clone, Copy)]
-struct Transform {
-    rotation: Option<f64>,
-    flip_x: bool,
+pub(crate) struct Transform {
+    pub(crate) rotation: Option<f64>,
+    pub(crate) flip_x: bool,
 }
 
 impl std::fmt::Display for Transform {
@@ -50,7 +50,7 @@ impl Direction {
 
     /// By default, all directed tiles should point up
     #[must_use]
-    const fn get_rotation(self) -> Option<f64> {
+    pub(crate) const fn get_rotation(self) -> Option<f64> {
         use Direction::*;
         match self {
             Up => None,
@@ -188,8 +188,8 @@ struct WallsDescription {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Asset {
-    uri: String,
-    transform: Transform,
+    pub(crate) uri: String,
+    pub(crate) transform: Transform,
 }
 
 #[wasm_bindgen]

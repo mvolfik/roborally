@@ -1,4 +1,4 @@
-Size=9,6 Antenna=0,3 Reboot=5,5:r Checkpoints=0,0;1,2 Spawnpoints=1,1;5,4
+Size=9,6 Antenna=0,3 Reboot=5,5:r Checkpoints=0,0;1,2 Spawnpoints=1,1:d;5,4:r
 V:d,V,V,F,F,F,V,V,V:d
 Bsr,Bsr,Bsr,Bsrr,Bsd:u,Bsll,Bsl,Bsl,Bsl
 Bsur,V:ul,V:u,V:urd,Bfd,V:uld,V:u,V:ur,Bsul
