@@ -12,7 +12,7 @@ pub mod tile;
 mod utils;
 
 use std::{collections::HashMap, convert::Into, panic, str::FromStr};
-use tile::Direction;
+use tile::{AssetArray, Direction};
 use utils::StringArray;
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -28,21 +28,17 @@ pub fn init_panic_hook() {
 }
 ///// /INIT /////
 
-#[wasm_bindgen]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Position {
+struct Position {
     x: u32,
     y: u32,
 }
 
-#[wasm_bindgen]
 impl Position {
-    #[wasm_bindgen(constructor)]
-    #[must_use]
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn new(x: u32, y: u32) -> Self {
-        Self { x, y }
-    }
+    // #[must_use]
+    // fn new(x: u32, y: u32) -> Self {
+    //     Self { x, y }
+    // }
     fn parse(it: &str) -> Result<Self, String> {
         let (x_str, y_str) = checked_split_in_two(it, ',')
             .ok_or_else(|| format!("Value `{}` doesn't have format `x,y`", it))?;
@@ -84,11 +80,11 @@ extern "C" {
 #[wasm_bindgen]
 impl GameMap {
     #[must_use]
-    pub fn get_tile(&self, x: u32, y: u32) -> Option<Tile> {
+    fn get_tile(&self, x: u32, y: u32) -> Option<&Tile> {
         if x >= self.size.x || y >= self.size.y {
             return None;
         }
-        self.tiles.get((y * self.size.x + x) as usize).copied()
+        self.tiles.get((y * self.size.x + x) as usize)
     }
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
@@ -101,6 +97,12 @@ impl GameMap {
     #[must_use]
     pub fn height(&self) -> u32 {
         self.size.y
+    }
+
+    #[must_use]
+    pub fn get_assets_at(&self, x: u32, y: u32) -> Option<AssetArray> {
+        let assets = self.get_tile(x, y)?.get_assets();
+        Some(assets.into())
     }
 
     /// First line is a header:

@@ -29,7 +29,7 @@ impl std::fmt::Display for Transform {
 }
 
 #[derive(Clone, Copy)]
-pub enum Direction {
+pub(crate) enum Direction {
     Up,
     Right,
     Down,
@@ -37,7 +37,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn parse(c: char) -> Result<Self, String> {
+    pub(crate) fn parse(c: char) -> Result<Self, String> {
         use Direction::*;
         Ok(match c {
             'u' => Up,
@@ -178,7 +178,7 @@ impl TileType {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
-pub struct WallsDescription {
+struct WallsDescription {
     up: bool,
     right: bool,
     down: bool,
@@ -191,8 +191,6 @@ pub struct Asset {
     uri: String,
     transform: Transform,
 }
-
-create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset );
 
 #[wasm_bindgen]
 impl Asset {
@@ -208,17 +206,17 @@ impl Asset {
     }
 }
 
-#[wasm_bindgen]
+create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset );
+
 #[derive(Clone, Copy)]
-pub struct Tile {
+pub(crate) struct Tile {
     typ: TileType,
     walls: WallsDescription,
 }
 
-#[wasm_bindgen]
 impl Tile {
     #[must_use]
-    pub fn get_assets(&self) -> AssetArray {
+    pub(crate) fn get_assets(&self) -> Vec<Asset> {
         use BeltEnd::*;
         use TileType::*;
 
@@ -294,11 +292,8 @@ impl Tile {
                 });
             }
         }
-        assets.into()
+        assets
     }
-}
-
-impl Tile {
     pub(crate) fn parse(s: &str) -> Result<Self, String> {
         let it = &mut s.chars().peekable();
         let typ = TileType::parse(it)?;

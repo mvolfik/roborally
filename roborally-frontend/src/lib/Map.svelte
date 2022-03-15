@@ -24,7 +24,6 @@
     <div class="grid" on:mouseleave={() => (hovered = undefined)}>
       {#each Array(map.height) as _, y}
         {#each Array(map.width) as _, x}
-          {@const tile = map.get_tile(x, y)}
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <div
             class="tile"
@@ -35,7 +34,7 @@
               hovered = { x, y };
             }}
           >
-            {#each tile.get_assets() as asset}
+            {#each map.get_assets_at(x, y) as asset}
               {@const assetUri = getAsset(asset.uri)}
               {#if assetUri !== undefined}
                 <img
