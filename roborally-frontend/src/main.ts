@@ -5,10 +5,7 @@ import mapString from "../../maps/test.csv?raw";
 
 init().then((internals) => {
   console.log({ game_simulation, internals });
-  let { map, warnings } = game_simulation.GameMap.parse(mapString);
-  if (warnings) {
-    console.warn(warnings);
-  }
+  let map = game_simulation.GameMap.parse(mapString);
   new MapComponent({
     target: document.getElementById("app"),
     props: {

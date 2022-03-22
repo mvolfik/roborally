@@ -1,5 +1,3 @@
-use std::{convert::Into, iter::Peekable, str::Chars};
-
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
 use crate::create_array_type;
@@ -10,7 +8,7 @@ use crate::create_array_type;
 /// (1, 3)
 ///
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct Transform {
     pub(crate) rotate: Option<f64>,
     pub(crate) flip_x: bool,
@@ -46,17 +44,6 @@ pub(crate) enum Direction {
 }
 
 impl Direction {
-    pub(crate) fn parse(c: char) -> Result<Self, String> {
-        use Direction::*;
-        Ok(match c {
-            'u' => Up,
-            'r' => Right,
-            'd' => Down,
-            'l' => Left,
-            _ => return Err("Invalid direction specification".to_string()),
-        })
-    }
-
     /// By default, all directed tiles should point up
     #[must_use]
     pub(crate) const fn get_rotation(self) -> Option<f64> {
@@ -71,7 +58,7 @@ impl Direction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum BeltEnd {
+pub(crate) enum BeltEnd {
     /// ''
     Straight,
     /// 'l'
@@ -80,25 +67,8 @@ enum BeltEnd {
     TurnRight,
 }
 
-impl BeltEnd {
-    #[must_use]
-    fn parse(it: &mut Peekable<Chars>) -> Self {
-        match it.peek() {
-            Some('l') => {
-                it.next();
-                Self::TurnLeft
-            }
-            Some('r') => {
-                it.next();
-                Self::TurnRight
-            }
-            _ => Self::Straight,
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
-enum TileType {
+pub(crate) enum TileType {
     /// `V`
     Void,
     /// `F`
@@ -115,80 +85,19 @@ enum TileType {
     Lasers(Direction, u8),
 }
 
-impl TileType {
-    fn parse(it: &mut Peekable<Chars>) -> Result<Self, String> {
-        use TileType::*;
-        Ok(match it.next() {
-            Some('V') => Void,
-            Some('F') => Floor,
-            Some('B') => match it.next() {
-                None => return Err("Missing belt type".to_string()),
-                Some(c @ ('f' | 's')) => Belt(
-                    c == 'f',
-                    Direction::parse(it.next().ok_or_else(|| "Need belt direction".to_string())?)?,
-                    BeltEnd::parse(it),
-                ),
-                Some(_) => return Err("Unknown belt type".to_string()),
-            },
-            Some('P') => {
-                let dir = Direction::parse(
-                    it.next()
-                        .ok_or_else(|| "Need push panel direction".to_string())?,
-                )?;
-                let mut active_rounds = [false; 5];
-                let mut last_digit = 0;
-                loop {
-                    if let Some(Some(d)) = it.peek().map(|c| c.to_digit(10)) {
-                        if d > last_digit && d <= 5 {
-                            *active_rounds.get_mut(d as usize - 1).unwrap() = true;
-                            last_digit = d;
-                            it.next();
-                            continue;
-                        }
-                    }
-                    break;
-                }
-                PushPanel(dir, active_rounds)
-            }
-            Some('R') => match (it.next(), it.next(), it.peek()) {
-                (Some('c'), Some('w'), _) => Rotation(true),
-                (Some('c'), Some('c'), Some('w')) => {
-                    it.next();
-                    Rotation(false)
-                }
-                _ => return Err("Invalid rotation specification".to_string()),
-            },
-
-            #[allow(clippy::cast_possible_truncation)]
-            Some('L') => Lasers(
-                Direction::parse(
-                    it.next()
-                        .ok_or_else(|| "Need laser direction".to_string())?,
-                )?,
-                it.next()
-                    .and_then(|c| {
-                        if c == '0' {
-                            // disallow 0 lasers
-                            None
-                        } else {
-                            c.to_digit(10)
-                        }
-                    })
-                    .ok_or_else(|| "Invalid lasers specification".to_string())?
-                    as u8,
-            ),
-            _ => return Err("Invalid tile specification".to_string()),
-        })
+impl Default for TileType {
+    fn default() -> Self {
+        Self::Void
     }
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Copy)]
-struct WallsDescription {
-    up: bool,
-    right: bool,
-    down: bool,
-    left: bool,
+#[derive(Clone, Copy, Default)]
+pub(crate) struct WallsDescription {
+    pub(crate) up: bool,
+    pub(crate) right: bool,
+    pub(crate) down: bool,
+    pub(crate) left: bool,
 }
 
 #[wasm_bindgen]
@@ -214,10 +123,10 @@ impl Asset {
 
 create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset );
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct Tile {
-    typ: TileType,
-    walls: WallsDescription,
+    pub(crate) typ: TileType,
+    pub(crate) walls: WallsDescription,
 }
 
 impl Tile {
@@ -229,19 +138,11 @@ impl Tile {
         let mut assets = match self.typ {
             Void => vec![Asset {
                 uri: intern("void.png").to_string(),
-                transform: Transform {
-                    flip_x: false,
-                    rotate: None,
-                    translate: None,
-                },
+                transform: Transform::default(),
             }],
             Floor => vec![Asset {
                 uri: intern("floor.png").to_string(),
-                transform: Transform {
-                    flip_x: false,
-                    rotate: None,
-                    translate: None,
-                },
+                transform: Transform::default(),
             }],
             Belt(is_fast, dir, end) => {
                 vec![Asset {
@@ -253,7 +154,7 @@ impl Tile {
                     transform: Transform {
                         flip_x: end == BeltEnd::TurnLeft,
                         rotate: dir.get_rotation(),
-                        translate: None,
+                        ..Transform::default()
                     },
                 }]
             }
@@ -261,29 +162,28 @@ impl Tile {
                 uri: intern("rotate.png").to_string(),
                 transform: Transform {
                     flip_x: !is_clockwise,
-                    rotate: None,
-                    translate: None,
+                    ..Transform::default()
                 },
             }],
             PushPanel(dir, active_rounds) => {
                 let mut assets = vec![Asset {
                     uri: intern("push-panel.png").to_string(),
                     transform: Transform {
-                        flip_x: false,
                         rotate: dir.get_rotation(),
-                        translate: None,
+                        ..Transform::default()
                     },
                 }];
                 for (i, is_active) in active_rounds.iter().enumerate() {
+                    #[allow(clippy::cast_precision_loss)]
                     assets.push(Asset {
                         uri: format!(
                             "push-panel-indicator-{}.png",
                             if *is_active { "active" } else { "inactive" }
                         ),
                         transform: Transform {
-                            flip_x: false,
                             translate: Some(((7 + i * 10) as f64, 6.0)),
                             rotate: dir.get_rotation(),
+                            ..Transform::default()
                         },
                     });
                 }
@@ -301,38 +201,12 @@ impl Tile {
                 assets.push(Asset {
                     uri: intern("wall.png").to_string(),
                     transform: Transform {
-                        flip_x: false,
                         rotate: dir.get_rotation(),
-                        translate: None,
+                        ..Transform::default()
                     },
                 });
             }
         }
         assets
-    }
-    pub(crate) fn parse(s: &str) -> Result<Self, String> {
-        let it = &mut s.chars().peekable();
-        let typ = TileType::parse(it)?;
-        let mut walls = WallsDescription {
-            up: false,
-            right: false,
-            down: false,
-            left: false,
-        };
-        match it.next() {
-            None => {}
-            Some(':') => loop {
-                *match it.next() {
-                    None => break,
-                    Some('u') => &mut walls.up,
-                    Some('r') => &mut walls.right,
-                    Some('d') => &mut walls.down,
-                    Some('l') => &mut walls.left,
-                    _ => return Err("Invalid wall specification".to_string()),
-                } = true;
-            },
-            _ => return Err("Extra characters found at end".to_string()),
-        }
-        Ok(Self { typ, walls })
     }
 }
