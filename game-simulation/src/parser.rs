@@ -352,20 +352,27 @@ impl Parse for GameMap {
                 )],
             )?;
 
-            checkpoints = get_parsed_prop(&mut props, name, "Checkpoints", &[])?;
-            // for (i, pos) in checkpoints.iter().enumerate() {
-            //     if !size.contains(*pos) {
-            //         return Err(format!("Checkpoint {} is out of map bounds", i));
-            //     }
-            // }
-            // todo
+            checkpoints = get_parsed_prop(
+                &mut props,
+                name,
+                "Checkpoints",
+                &[(
+                    &|cps: &Vec<Position>| cps.iter().all(|cp| size.contains(*cp)),
+                    "some checkpoints aren't in map bounds",
+                )],
+            )?;
 
-            spawn_points = get_parsed_prop(&mut props, name, "Spawnpoints", &[])?;
-            // for (i, (pos, _)) in spawn_points.iter().enumerate() {
-            //     if !size.contains(*pos) {
-            //         return Err(format!("Spawnpoint {} is out of map bounds", i));
-            //     }
-            // }
+            spawn_points = get_parsed_prop(
+                &mut props,
+                name,
+                "Spawnpoints",
+                &[(
+                    &|sps: &Vec<(Position, Direction)>| {
+                        sps.iter().all(|(pos, _)| size.contains(*pos))
+                    },
+                    "some spawn points aren't in map bounds",
+                )],
+            )?;
         }
 
         let tile_lines: Vec<Vec<Tile>> = lines
