@@ -35,7 +35,7 @@ impl std::fmt::Display for Transform {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Direction {
     Up,
     Right,
@@ -67,7 +67,7 @@ pub(crate) enum BeltEnd {
     TurnRight,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TileType {
     /// `V`
     Void,
@@ -208,5 +208,22 @@ impl Tile {
             }
         }
         assets
+    }
+}
+
+pub(crate) struct TileGrid(pub Vec<Tile>);
+
+impl TileGrid {
+    pub(crate) fn get_tile(
+        &self,
+        width: usize,
+        height: usize,
+        x: usize,
+        y: usize,
+    ) -> Option<&Tile> {
+        if x >= width || y >= height {
+            return None;
+        }
+        self.0.get((y * width + x) as usize)
     }
 }

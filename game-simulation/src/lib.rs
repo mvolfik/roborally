@@ -17,7 +17,7 @@ pub mod tile;
 mod utils;
 
 use std::{convert::Into, panic};
-use tile::{AssetArray, Direction};
+use tile::{AssetArray, Direction, TileGrid};
 
 use wasm_bindgen::prelude::*;
 
@@ -36,7 +36,7 @@ pub fn init_panic_hook() {
 }
 ///// /INIT /////
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Position {
     x: u32,
     y: u32,
@@ -53,7 +53,7 @@ impl Position {
 #[wasm_bindgen]
 pub struct GameMap {
     /// With coordinates starting at top left, index = x * width + y
-    tiles: Vec<Tile>,
+    tiles: TileGrid,
     size: Position,
     antenna: Position,
     reboot_token: (Position, Direction),
@@ -65,11 +65,14 @@ pub struct GameMap {
 impl GameMap {
     #[must_use]
     fn get_tile(&self, x: u32, y: u32) -> Option<&Tile> {
-        if x >= self.size.x || y >= self.size.y {
-            return None;
-        }
-        self.tiles.get((y * self.size.x + x) as usize)
+        self.tiles.get_tile(
+            self.size.x as usize,
+            self.size.y as usize,
+            x as usize,
+            y as usize,
+        )
     }
+
     #[allow(clippy::missing_const_for_fn)]
     #[wasm_bindgen(getter)]
     #[must_use]

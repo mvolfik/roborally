@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    tile::{BeltEnd, Direction, Tile, TileType, WallsDescription},
+    tile::{BeltEnd, Direction, Tile, TileGrid, TileType, WallsDescription},
     GameMap, Position,
 };
 use std::str::FromStr;
@@ -276,7 +276,7 @@ fn get_parsed_prop<T: Parse>(
     props: &mut HashMap<&str, &str>,
     basename: &str,
     propname: &str,
-    verifications: &[(&dyn Fn(&T) -> bool, &str)],
+    verifications: &mut [(&mut dyn FnMut(&T) -> bool, &str)],
 ) -> Result<T, ParseError> {
     let s = props.remove(propname).ok_or_else(|| {
         format_parse_error(
@@ -287,7 +287,7 @@ fn get_parsed_prop<T: Parse>(
     })?;
     let prop_fullname = &format!("{}.props.{}", basename, propname);
     let val = T::parse(s, prop_fullname)?;
-    for (ver_fn, err_msg) in verifications {
+    for (ver_fn, err_msg) in verifications.iter_mut() {
         if !ver_fn(&val) {
             return Err(format_parse_error(prop_fullname, err_msg, s));
         }
@@ -299,81 +299,38 @@ impl Parse for GameMap {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
         let mut lines = value.lines();
         // return Err(format_parse_error("foo", "bar", lines.next().unwrap()));
-        let size: Position;
+
         let antenna: Position;
         let reboot_token: (Position, Direction);
         let checkpoints: Vec<Position>;
         let spawn_points: Vec<(Position, Direction)>;
+
+        let mut props = HashMap::new();
+        for propdef in lines
+            .next()
+            .ok_or_else(|| format_parse_error(name, "no lines in input", value))?
+            .split(' ')
         {
-            let mut props = HashMap::new();
-            for propdef in lines
-                .next()
-                .ok_or_else(|| format_parse_error(name, "no lines in input", value))?
-                .split(' ')
-            {
-                // todo fix
-                let (key, prop_value) = checked_split_in_two(propdef, '=').ok_or_else(|| {
-                    format_parse_error(
-                        name,
-                        "prop definition doesn't follow syntax `key=value`",
-                        propdef,
-                    )
-                })?;
-                props.insert(key, prop_value);
-            }
-
-            size = get_parsed_prop(
-                &mut props,
-                name,
-                "Size",
-                &[(
-                    &|s: &Position| s.x > 0 && s.y > 0,
-                    "map dimensions must be non-zero",
-                )],
-            )?;
-
-            antenna = get_parsed_prop(
-                &mut props,
-                name,
-                "Antenna",
-                &[(
-                    &|pos: &Position| size.contains(*pos),
-                    "antenna is out of map bounds",
-                )],
-            )?;
-
-            reboot_token = get_parsed_prop(
-                &mut props,
-                name,
-                "Reboot",
-                &[(
-                    &|(pos, _): &(Position, _)| size.contains(*pos),
-                    "reboot token is out of map bounds",
-                )],
-            )?;
-
-            checkpoints = get_parsed_prop(
-                &mut props,
-                name,
-                "Checkpoints",
-                &[(
-                    &|cps: &Vec<Position>| cps.iter().all(|cp| size.contains(*cp)),
-                    "some checkpoints aren't in map bounds",
-                )],
-            )?;
-
-            spawn_points = get_parsed_prop(
-                &mut props,
-                name,
-                "Spawnpoints",
-                &[(
-                    &|sps: &Vec<(Position, Direction)>| {
-                        sps.iter().all(|(pos, _)| size.contains(*pos))
-                    },
-                    "some spawn points aren't in map bounds",
-                )],
-            )?;
+            // todo fix
+            let (key, prop_value) = checked_split_in_two(propdef, '=').ok_or_else(|| {
+                format_parse_error(
+                    name,
+                    "prop definition doesn't follow syntax `key=value`",
+                    propdef,
+                )
+            })?;
+            props.insert(key, prop_value);
         }
+
+        let size: Position = get_parsed_prop(
+            &mut props,
+            name,
+            "Size",
+            &mut [(
+                &mut |s: &Position| s.x > 0 && s.y > 0,
+                "map dimensions must be non-zero",
+            )],
+        )?;
 
         let tile_lines: Vec<Vec<Tile>> = lines
             .enumerate()
@@ -399,7 +356,132 @@ impl Parse for GameMap {
                 &format!("<{} lines>", tile_lines.len()),
             ));
         }
-        let tiles = tile_lines.into_iter().flatten().collect();
+        let tiles = TileGrid(tile_lines.into_iter().flatten().collect());
+
+        {
+            let mut used_special_tiles: HashSet<Position> = HashSet::new();
+
+            let mut is_in_bounds = |p: &Position| size.contains(*p);
+            let mut faces_into_map = |(pos, dir): &(Position, Direction)| {
+                (pos.x > 0 || *dir != Direction::Left)
+                    && (pos.y > 0 || *dir != Direction::Up)
+                    && (pos.x < size.x - 1 || *dir != Direction::Right)
+                    && (pos.y < size.y - 1 || *dir != Direction::Down)
+            };
+            let mut is_on_floor = |p: &Position| {
+                tiles
+                    .get_tile(size.x as usize, size.y as usize, p.x as usize, p.y as usize)
+                    .map(|x| x.typ)
+                    == Some(TileType::Floor)
+            };
+            let mut doesnt_overlap_other_special = |p: &Position| used_special_tiles.insert(*p);
+
+            antenna = get_parsed_prop(
+                &mut props,
+                name,
+                "Antenna",
+                &mut [
+                    (&mut is_in_bounds, "must be in map bounds"),
+                    (&mut is_on_floor, "must be placed on a floor tile"),
+                    (
+                        &mut |p| {
+                            matches!(
+                                tiles.get_tile(
+                                    size.x as usize,
+                                    size.y as usize,
+                                    p.x as usize,
+                                    p.y as usize
+                                ),
+                                Some(Tile {
+                                    walls: WallsDescription {
+                                        up: true,
+                                        right: true,
+                                        down: true,
+                                        left: true
+                                    },
+                                    ..
+                                })
+                            )
+                        },
+                        "underlying tile must have walls on all sides",
+                    ),
+                    (
+                        &mut doesnt_overlap_other_special,
+                        "can't overlap other special tiles",
+                    ),
+                ],
+            )?;
+
+            reboot_token = get_parsed_prop(
+                &mut props,
+                name,
+                "Reboot",
+                &mut [
+                    (&mut |(pos, _)| is_in_bounds(pos), "must be in map bounds"),
+                    (&mut faces_into_map, "must face into the map"),
+                    (
+                        &mut |(pos, _)| is_on_floor(pos),
+                        "must be placed on a floor tile",
+                    ),
+                    (
+                        &mut |(pos, _)| doesnt_overlap_other_special(pos),
+                        "can't overlap other special tiles",
+                    ),
+                ],
+            )?;
+
+            checkpoints = get_parsed_prop(
+                &mut props,
+                name,
+                "Checkpoints",
+                &mut [
+                    (
+                        &mut |cps: &Vec<Position>| cps.iter().all(is_in_bounds),
+                        "all must be in map bounds",
+                    ),
+                    (
+                        &mut |cps: &Vec<Position>| cps.iter().all(is_on_floor),
+                        "all must be placed on a floor tile",
+                    ),
+                    (
+                        &mut |cps: &Vec<Position>| {
+                            cps.iter().all(&mut doesnt_overlap_other_special)
+                        },
+                        "none can overlap other special tiles",
+                    ),
+                ],
+            )?;
+
+            spawn_points = get_parsed_prop(
+                &mut props,
+                name,
+                "Spawnpoints",
+                &mut [
+                    (
+                        &mut |sps: &Vec<(Position, Direction)>| {
+                            sps.iter().all(|(pos, _)| is_in_bounds(pos))
+                        },
+                        "all must be in map bounds",
+                    ),
+                    (
+                        &mut |sps: &Vec<(Position, Direction)>| sps.iter().all(faces_into_map),
+                        "all must face into the map",
+                    ),
+                    (
+                        &mut |sps: &Vec<(Position, Direction)>| {
+                            sps.iter().all(|(pos, _)| is_on_floor(pos))
+                        },
+                        "all must be placed on a floor tile",
+                    ),
+                    (
+                        &mut |sps: &Vec<(Position, Direction)>| {
+                            sps.iter().all(|(pos, _)| doesnt_overlap_other_special(pos))
+                        },
+                        "none can overlap other special tiles",
+                    ),
+                ],
+            )?;
+        }
         Ok(Self {
             tiles,
             size,
