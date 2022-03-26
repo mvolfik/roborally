@@ -19,6 +19,7 @@ mod parser;
 
 use std::{
     collections::HashMap,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
@@ -150,7 +151,16 @@ async fn main() -> std::io::Result<()> {
             .route("/api/new-game", web::post().to(new_game_handler))
             .service(Files::new("/", "../roborally-frontend/dist").index_file("index.html"))
     })
-    .bind(("127.0.0.1", 8080))?;
+    .bind(
+        match std::env::var("PORT")
+            .ok()
+            .map(|p| u16::from_str(&p).ok())
+            .flatten()
+        {
+            Some(p) => ("0.0.0.0", p),
+            None => ("127.0.0.1", 8080),
+        },
+    )?;
     println!("Running");
     server.run().await
 }
