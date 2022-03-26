@@ -76,6 +76,7 @@ WORKDIR /app
 
 COPY --from=node-builder /builder/roborally-frontend/dist ./roborally-frontend/dist
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./backend/
+COPY ./source-code.tar.gz ./roborally-content/dist/
 
 WORKDIR /app/backend
 CMD ["./roborally-server"]

@@ -11,3 +11,4 @@ target
 bin
 pkg
 wasm-pack.log
+/source-code.tar.gz
