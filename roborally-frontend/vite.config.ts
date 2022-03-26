@@ -8,12 +8,11 @@ export default defineConfig({
       allow: [".", "../backend/roborally-frontend-wasm/pkg"],
     },
     proxy: {
-      "/game": {
+      "/websocket/": {
         ws: true,
-        target: "ws://localhost:8080/",
+        target: "ws://localhost:8080",
       },
-      "/new-game": "http://localhost:8080/",
-      "/list-games": "http://localhost:8080/",
+      "/api/": "http://localhost:8080",
     },
   },
 });

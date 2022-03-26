@@ -1,3 +1,4 @@
+set -e
 cargo install --git https://github.com/mvolfik/wasm-pack --branch merged-1119-and-937
 cd backend/roborally-frontend-wasm
 wasm-pack build --target web --weak-refs

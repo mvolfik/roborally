@@ -145,9 +145,9 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
-            .route("/game", web::get().to(game_handler))
-            .route("/list-games", web::get().to(list_games_handler))
-            .route("/new-game", web::post().to(new_game_handler))
+            .route("/websocket/game", web::get().to(game_handler))
+            .route("/api/list-games", web::get().to(list_games_handler))
+            .route("/api/new-game", web::post().to(new_game_handler))
             .service(Files::new("/", "../roborally-frontend/dist").index_file("index.html"))
     })
     .bind(("127.0.0.1", 8080))?;

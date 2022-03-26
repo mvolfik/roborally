@@ -156,7 +156,7 @@ impl GameConnectionResult {
 pub async fn connect_to_game(connect_info: ConnectInfo) -> Result<GameConnectionResult, JsValue> {
     let loc = window().unwrap().location();
     let ws = WebSocket::new(&format!(
-        "ws{}://{}/game?{}",
+        "ws{}://{}/websocket/game?{}",
         if loc.protocol()? == "https" { "s" } else { "" },
         loc.host()?,
         connect_info.to_query_string().to_string()

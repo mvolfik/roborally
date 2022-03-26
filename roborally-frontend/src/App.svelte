@@ -17,7 +17,7 @@
       name: string;
     }[]
   > {
-    const r = await fetch("/list-games");
+    const r = await fetch("/api/list-games");
     return await r.json();
   }
 
@@ -35,7 +35,7 @@
       }
     }
     const map_name = prompt("Map name:");
-    const r = await fetch("/new-game", {
+    const r = await fetch("/api/new-game", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ players, map_name, name }),

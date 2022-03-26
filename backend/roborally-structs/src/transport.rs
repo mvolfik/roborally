@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
+#[cfg(feature = "client")]
 use web_sys::UrlSearchParams;
 
 #[cfg_attr(feature = "server", derive(Deserialize))]
