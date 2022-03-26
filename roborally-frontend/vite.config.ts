@@ -5,7 +5,15 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     fs: {
-      allow: [".", "../game-simulation/pkg"],
+      allow: [".", "../backend/roborally-frontend-wasm/pkg"],
+    },
+    proxy: {
+      "/game": {
+        ws: true,
+        target: "ws://localhost:8080/",
+      },
+      "/new-game": "http://localhost:8080/",
+      "/list-games": "http://localhost:8080/",
     },
   },
 });

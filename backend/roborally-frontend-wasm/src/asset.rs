@@ -1,3 +1,9 @@
+use roborally_structs::{
+    game_map::GameMap,
+    position::Direction,
+    tile::{Grid, Tile},
+    tile_type::{BeltEnd, TileType},
+};
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
 use crate::create_array_type;
@@ -8,8 +14,9 @@ use crate::create_array_type;
 /// (1, 3)
 ///
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Transform {
+#[non_exhaustive]
+#[derive(Default, Clone, Copy)]
+pub struct Transform {
     pub(crate) rotate: Option<f64>,
     pub(crate) flip_x: bool,
     pub(crate) translate: Option<(f64, f64)>,
@@ -35,77 +42,14 @@ impl std::fmt::Display for Transform {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Direction {
-    Up,
-    Right,
-    Down,
-    Left,
-}
-
-impl Direction {
-    /// By default, all directed tiles should point up
-    #[must_use]
-    pub(crate) const fn get_rotation(self) -> Option<f64> {
-        use Direction::*;
-        match self {
-            Up => None,
-            Right => Some(90.0),
-            Down => Some(180.0),
-            Left => Some(-90.0),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BeltEnd {
-    /// ''
-    Straight,
-    /// 'l'
-    TurnLeft,
-    /// 'r'
-    TurnRight,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TileType {
-    /// `V`
-    Void,
-    /// `F`
-    Floor,
-    /// `B(f|s){dir}[end]`
-    /// bool = is_fast
-    Belt(bool, Direction, BeltEnd),
-    /// `P{dir}[1][2][3][4][5]`
-    PushPanel(Direction, [bool; 5]),
-    /// `R(cw|ccw)`
-    /// bool = is_clockwise
-    Rotation(bool),
-    /// `L{dir}(1-9)`
-    Lasers(Direction, u8),
-}
-
-impl Default for TileType {
-    fn default() -> Self {
-        Self::Void
-    }
-}
-
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, Copy, Default)]
-pub(crate) struct WallsDescription {
-    pub(crate) up: bool,
-    pub(crate) right: bool,
-    pub(crate) down: bool,
-    pub(crate) left: bool,
-}
-
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Asset {
-    pub(crate) uri: String,
-    pub(crate) transform: Transform,
+    uri: String,
+    transform: Transform,
 }
+
+create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset);
 
 #[wasm_bindgen]
 impl Asset {
@@ -121,21 +65,23 @@ impl Asset {
     }
 }
 
-create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset );
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct TileAssets(Vec<Asset>);
 
-#[derive(Clone, Copy, Default)]
-pub(crate) struct Tile {
-    pub(crate) typ: TileType,
-    pub(crate) walls: WallsDescription,
+#[wasm_bindgen]
+impl TileAssets {
+    pub fn to_jsarray(self) -> AssetArray {
+        self.0.into()
+    }
 }
 
-impl Tile {
-    #[must_use]
-    pub(crate) fn get_assets(&self) -> Vec<Asset> {
+impl From<&Tile> for TileAssets {
+    fn from(t: &Tile) -> Self {
         use BeltEnd::*;
         use TileType::*;
 
-        let mut assets = match self.typ {
+        let mut assets = match t.typ {
             Void => vec![Asset {
                 uri: intern("void.png").to_string(),
                 transform: Transform::default(),
@@ -189,13 +135,12 @@ impl Tile {
                 }
                 assets
             }
-            Lasers(_, _) => todo!(),
         };
         for (is_wall, dir) in [
-            (self.walls.up, Direction::Up),
-            (self.walls.right, Direction::Right),
-            (self.walls.down, Direction::Down),
-            (self.walls.left, Direction::Left),
+            (t.walls.up, Direction::Up),
+            (t.walls.right, Direction::Right),
+            (t.walls.down, Direction::Down),
+            (t.walls.left, Direction::Left),
         ] {
             if is_wall {
                 assets.push(Asset {
@@ -207,23 +152,88 @@ impl Tile {
                 });
             }
         }
-        assets
+        TileAssets(assets)
     }
 }
 
-pub(crate) struct TileGrid(pub Vec<Tile>);
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct AssetMap(Grid<TileAssets>);
 
-impl TileGrid {
-    pub(crate) fn get_tile(
-        &self,
-        width: usize,
-        height: usize,
-        x: usize,
-        y: usize,
-    ) -> Option<&Tile> {
-        if x >= width || y >= height {
-            return None;
+#[wasm_bindgen]
+impl AssetMap {
+    pub fn get(&self, x: usize, y: usize) -> Option<TileAssets> {
+        self.0.get(x, y).cloned()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn width(&self) -> usize {
+        self.0.size().x
+    }
+    #[wasm_bindgen(getter)]
+    pub fn height(&self) -> usize {
+        self.0.size().y
+    }
+}
+
+#[allow(clippy::fallible_impl_from)]
+impl From<GameMap> for AssetMap {
+    fn from(m: GameMap) -> Self {
+        let mut assets = m.tiles.map(|c| TileAssets::from(c));
+
+        assets
+            .get_mut(m.antenna.x, m.antenna.y)
+            .unwrap()
+            .0
+            .push(Asset {
+                uri: intern("antenna.png").to_string(),
+                transform: Transform::default(),
+            });
+
+        assets
+            .get_mut(m.reboot_token.0.x, m.reboot_token.0.y)
+            .unwrap()
+            .0
+            .push(Asset {
+                uri: intern("reboot-token.png").to_string(),
+                transform: Transform {
+                    rotate: m.reboot_token.1.get_rotation(),
+                    ..Transform::default()
+                },
+            });
+
+        for (i, checkpoint) in m.checkpoints.iter().enumerate() {
+            assets
+                .get_mut(checkpoint.x, checkpoint.y)
+                .unwrap()
+                .0
+                .extend(
+                    [
+                        Asset {
+                            uri: intern("checkpoint.png").to_string(),
+                            transform: Transform::default(),
+                        },
+                        Asset {
+                            uri: format!("number-{}.png", i + 1),
+                            transform: Transform {
+                                translate: Some((30.0, 30.0)),
+                                ..Transform::default()
+                            },
+                        },
+                    ]
+                    .into_iter(),
+                );
         }
-        self.0.get((y * width + x) as usize)
+
+        for (pos, dir) in m.spawn_points {
+            assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
+                uri: intern("spawn-point.png").to_string(),
+                transform: Transform {
+                    rotate: dir.get_rotation(),
+                    ..Transform::default()
+                },
+            });
+        }
+
+        Self(assets)
     }
 }

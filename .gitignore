@@ -5,3 +5,9 @@ dist-ssr
 
 .vscode/*
 .DS_Store
+
+target
+*.rs.bk
+bin
+pkg
+wasm-pack.log

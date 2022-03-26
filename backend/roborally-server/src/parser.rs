@@ -1,10 +1,14 @@
-use std::collections::{HashMap, HashSet};
-
-use crate::{
-    tile::{BeltEnd, Direction, Tile, TileGrid, TileType, WallsDescription},
-    GameMap, Position,
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
 };
-use std::str::FromStr;
+
+use roborally_structs::{
+    game_map::GameMap,
+    position::{Direction, Position},
+    tile::{Grid, Tile, WallsDescription},
+    tile_type::{BeltEnd, TileType},
+};
 
 fn checked_split_in_two<'a, T: std::str::pattern::Pattern<'a>>(
     s: &'a str,
@@ -33,7 +37,7 @@ impl AsRef<str> for ParseError {
 impl ParseError {
     #[inline]
     /// Gets the inner string, moving the value
-    pub(crate) const fn get(self) -> String {
+    pub const fn get(self) -> String {
         self.0
     }
 }
@@ -43,7 +47,7 @@ pub trait Parse: Sized {
 }
 
 trait SupportedNum: FromStr {}
-impl SupportedNum for u32 {}
+impl SupportedNum for usize {}
 impl SupportedNum for u8 {}
 
 impl<T: SupportedNum> Parse for T {
@@ -57,8 +61,8 @@ impl Parse for Position {
         let (x_str, y_str) = checked_split_in_two(value, ',')
             .ok_or_else(|| format_parse_error(name, "expected format `x,y`", value))?;
         Ok(Self {
-            x: u32::parse(x_str, &format!("{}.x", name))?,
-            y: u32::parse(y_str, &format!("{}.x", name))?,
+            x: usize::parse(x_str, &format!("{}.x", name))?,
+            y: usize::parse(y_str, &format!("{}.x", name))?,
         })
     }
 }
@@ -195,26 +199,32 @@ impl Parse for TileType {
                     ))
                 }
             },
-            #[allow(clippy::cast_possible_truncation)]
-            Some('L') => Lasers(
-                Direction::parse(
-                    &char_option_to_string(chars.next()),
-                    &format!("{}.direction", name),
-                )?,
-                chars
-                    .next()
-                    .and_then(|c| {
-                        if c == '0' {
-                            // disallow 0 lasers
-                            None
-                        } else {
-                            c.to_digit(10)
-                        }
-                    })
-                    .ok_or_else(|| format_parse_error(name, "invalid laser count", value))?
-                    as u8,
-            ),
-            _ => return Err(format_parse_error(name, "empty tile specification", value)),
+            // #[allow(clippy::cast_possible_truncation)]
+            // Some('L') => Lasers(
+            //     Direction::parse(
+            //         &char_option_to_string(chars.next()),
+            //         &format!("{}.direction", name),
+            //     )?,
+            //     chars
+            //         .next()
+            //         .and_then(|c| {
+            //             if c == '0' {
+            //                 // disallow 0 lasers
+            //                 None
+            //             } else {
+            //                 c.to_digit(10)
+            //             }
+            //         })
+            //         .ok_or_else(|| format_parse_error(name, "invalid laser count", value))?
+            //         as u8,
+            // ),
+            _ => {
+                return Err(format_parse_error(
+                    name,
+                    "invalid tile specification",
+                    value,
+                ))
+            }
         };
         if chars.next().is_some() {
             Err(format_parse_error(
@@ -295,6 +305,13 @@ fn get_parsed_prop<T: Parse>(
     Ok(val)
 }
 
+/// First line is a header:
+/// header : {prop}( {prop})*
+/// prop   : Size={pos} | Antenna={pos} | Reboot={pos}:{dir} | Checkpoints=[{pos}];+ | Spawnpoints=[{pos}:{dir}];+
+/// pos    : <x>,<y>
+/// dir    : u | r | d | l
+///
+/// Then follow Size.y remaining lines
 impl Parse for GameMap {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
         let mut lines = value.lines();
@@ -356,7 +373,8 @@ impl Parse for GameMap {
                 &format!("<{} lines>", tile_lines.len()),
             ));
         }
-        let tiles = TileGrid(tile_lines.into_iter().flatten().collect());
+        let tiles = Grid::new(tile_lines.into_iter().flatten().collect(), size)
+            .map_err(|e| format_parse_error(name, &e, &format!("{:?}", size)))?;
 
         {
             let mut used_special_tiles: HashSet<Position> = HashSet::new();
@@ -369,13 +387,9 @@ impl Parse for GameMap {
                     && (pos.y < size.y - 1 || *dir != Direction::Down)
             };
             let mut is_on_floor = |p: &Position| {
-                tiles
-                    .get_tile(size.x as usize, size.y as usize, p.x as usize, p.y as usize)
-                    .map(|x| x.typ)
-                    == Some(TileType::Floor)
+                tiles.get(p.x as usize, p.y as usize).map(|x| x.typ) == Some(TileType::Floor)
             };
             let mut doesnt_overlap_other_special = |p: &Position| used_special_tiles.insert(*p);
-
             antenna = get_parsed_prop(
                 &mut props,
                 name,
@@ -386,12 +400,7 @@ impl Parse for GameMap {
                     (
                         &mut |p| {
                             matches!(
-                                tiles.get_tile(
-                                    size.x as usize,
-                                    size.y as usize,
-                                    p.x as usize,
-                                    p.y as usize
-                                ),
+                                tiles.get(p.x as usize, p.y as usize),
                                 Some(Tile {
                                     walls: WallsDescription {
                                         up: true,
@@ -484,7 +493,6 @@ impl Parse for GameMap {
         }
         Ok(Self {
             tiles,
-            size,
             antenna,
             reboot_token,
             checkpoints,

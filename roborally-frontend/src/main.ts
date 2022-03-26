@@ -1,15 +1,12 @@
-import MapComponent from "./lib/Map.svelte";
+import App from "./App.svelte";
 import "./global.css";
-import init, * as game_simulation from "../game_simulation";
-import mapString from "../../maps/test.csv?raw";
+import * as frontend_wasm from "../frontend-wasm";
 
-init().then((internals) => {
-  console.log({ game_simulation, internals });
-  let map = game_simulation.GameMap.parse(mapString);
-  new MapComponent({
+frontend_wasm.default().then((internals) => {
+  window.frontend_wasm = frontend_wasm;
+  window.internals = internals;
+  console.log({ frontend_wasm, internals });
+  new App({
     target: document.getElementById("app"),
-    props: {
-      map,
-    },
   });
 });

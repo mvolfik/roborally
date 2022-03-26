@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { GameMap } from "../../game_simulation";
+  import type { AssetMap } from "frontend-wasm/roborally_frontend_wasm";
+
   import Zoomable from "svelte-layer-zoomable";
 
   const assets = import.meta.globEager("../assets/textures/*.png", {
@@ -14,7 +15,7 @@
     );
   }
 
-  export let map: GameMap;
+  export let map: AssetMap;
   export let hovered = undefined;
 </script>
 
@@ -34,7 +35,7 @@
               hovered = { x, y };
             }}
           >
-            {#each map.get_assets_at(x, y) as asset}
+            {#each map.get(x, y)?.to_jsarray() ?? [] as asset}
               {@const assetUri = getAsset(asset.uri)}
               {#if assetUri !== undefined}
                 <img

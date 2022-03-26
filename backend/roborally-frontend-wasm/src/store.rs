@@ -7,6 +7,7 @@ use wasm_bindgen::{
 };
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct Writable {
     value: JsValue,
     subscribers: Rc<RefCell<HashMap<u64, Function>>>,
@@ -40,6 +41,7 @@ impl Writable {
         }))
         .unchecked_into())
     }
+
     pub fn set(&mut self, val: JsValue) -> Array {
         self.value = val;
         let errors = Array::new();
