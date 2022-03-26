@@ -78,4 +78,4 @@ COPY --from=node-builder /builder/roborally-frontend/dist ./roborally-frontend/d
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./backend/
 
 WORKDIR /app/backend
-CMD ["./backend"]
+CMD ["./roborally-server"]
