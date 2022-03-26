@@ -157,7 +157,7 @@ pub async fn connect_to_game(connect_info: ConnectInfo) -> Result<GameConnection
     let loc = window().unwrap().location();
     let ws = WebSocket::new(&format!(
         "ws{}://{}/websocket/game?{}",
-        if loc.protocol()? == "https" { "s" } else { "" },
+        if loc.protocol()? == "https:" { "s" } else { "" },
         loc.host()?,
         connect_info.to_query_string().to_string()
     ))?;
