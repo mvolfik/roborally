@@ -19,9 +19,13 @@ COPY ./backend/roborally-frontend-wasm/Cargo.toml ./backend/roborally-frontend-w
 COPY ./backend/roborally-server/Cargo.toml ./backend/roborally-server/
 RUN cd backend && cargo build --release --locked -p roborally-frontend-wasm --target wasm32-unknown-unknown
 
+# Touch entry file after each copy - cargo apparently caches by modification time,
+# and real source files are most likely order than the above created 'dummy' ones
 COPY ./backend/roborally-structs/src ./backend/roborally-structs/src
+RUN touch ./backend/roborally-structs/src/lib.rs
 COPY ./backend/roborally-frontend-wasm/src ./backend/roborally-frontend-wasm/src
-RUN cd backend && wasm-pack --release --target web --weak-refs
+RUN touch ./backend/roborally-frontend-wasm/src/lib.rs
+RUN cd backend/roborally-frontend-wasm && wasm-pack build --release --target web --weak-refs
 
 
 
@@ -57,8 +61,13 @@ COPY ./backend/roborally-frontend-wasm/Cargo.toml ./backend/roborally-frontend-w
 COPY ./backend/roborally-server/Cargo.toml ./backend/roborally-server/
 RUN cd backend && cargo build --release --locked -p roborally-server
 
+# Touch entry file after each copy - cargo apparently caches by modification time,
+# and real source files are most likely order than the above created 'dummy' ones
 COPY ./backend/roborally-structs/src ./backend/roborally-structs/src
+RUN touch ./backend/roborally-structs/src/lib.rs
 COPY ./backend/roborally-server/src ./backend/roborally-server/src
+RUN touch ./backend/roborally-server/src/lib.rs
+COPY ./maps ./maps
 RUN cd backend && cargo build --release --locked -p roborally-server
 
 
@@ -66,7 +75,7 @@ FROM debian:bullseye-slim
 WORKDIR /app
 
 COPY --from=node-builder /builder/roborally-frontend/dist ./roborally-frontend/dist
-COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./backend
+COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./backend/
 
 WORKDIR /app/backend
 CMD ["./backend"]
