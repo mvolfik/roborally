@@ -1,22 +1,32 @@
 <script lang="ts">
-  import type { AssetMap } from "frontend-wasm/roborally_frontend_wasm";
-
+  import type {
+    AssetMap,
+    PlayerGameStateView,
+    PlayerPublicStateWrapper,
+  } from "frontend-wasm/roborally_frontend_wasm";
+  import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-
-  const assets = import.meta.globEager("../assets/textures/*.png", {
-    assert: { type: "url" },
-  }) as Record<string, { default: string }>;
-
-  function getAsset(name: string): string {
-    return (
-      assets["../assets/textures/" + name]?.default ??
-      (console.warn(`Unknown asset ${name}, using floor as fallback`),
-      assets["../assets/textures/floor.png"].default)
-    );
-  }
+  import type { get, Writable } from "svelte/store";
+  import { getTexture } from "./utils";
 
   export let map: AssetMap;
   export let hovered = undefined;
+  export let stateStore: Writable<PlayerGameStateView>;
+
+  let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
+  $: {
+    players = new Map();
+    const playersN = $stateStore.players;
+    for (let i = 0; i < playersN; i++) {
+      const player = $stateStore.get_player(i);
+      const pos = player.position;
+      const key = `${pos.x},${pos.y}`;
+      if (!players.has(key)) {
+        players.set(key, []);
+      }
+      players.get(key).push(player);
+    }
+  }
 </script>
 
 <div class="outer">
@@ -36,7 +46,7 @@
             }}
           >
             {#each map.get(x, y)?.to_jsarray() ?? [] as asset}
-              {@const assetUri = getAsset(asset.uri)}
+              {@const assetUri = getTexture(asset.uri)}
               {#if assetUri !== undefined}
                 <img
                   style:transform={asset.transform_string}
@@ -51,15 +61,33 @@
           </div>
         {/each}
       {/each}
+      {#each Array($stateStore.players) as _, i}
+        {@const player = $stateStore.get_player(i)}
+        {@const pos = player.position}
+        <img
+          src={robot}
+          alt="Robot"
+          class="robot"
+          style:transform={player.transform_string}
+          style:filter={player.filter_string}
+          style:--x={pos.x}
+          style:--y={pos.y}
+        />
+      {/each}
     </div>
   </Zoomable>
 </div>
 
 <style>
-  div.outer {
+  .robot {
     position: absolute;
-    height: 100vh;
-    width: 100vw;
+    top: calc(64px * var(--y));
+    left: calc(64px * var(--x));
+    transition: all 1s ease-in-out;
+  }
+  div.outer {
+    height: 100%;
+    width: 100%;
     background-image: radial-gradient(#222, #666);
   }
   div.grid {

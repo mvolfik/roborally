@@ -5,7 +5,6 @@ import * as frontend_wasm from "../frontend-wasm";
 frontend_wasm.default().then((internals) => {
   window.frontend_wasm = frontend_wasm;
   window.internals = internals;
-  console.log({ frontend_wasm, internals });
   new App({
     target: document.getElementById("app"),
   });

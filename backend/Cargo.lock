@@ -1063,12 +1063,10 @@ name = "roborally-frontend-wasm"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
- "futures",
  "js-sys",
  "rmp-serde",
  "roborally-structs",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-sys",
 ]
 
@@ -1080,6 +1078,7 @@ dependencies = [
  "actix-files",
  "actix-web",
  "actix-web-actors",
+ "futures",
  "rand",
  "rmp-serde",
  "roborally-structs",
@@ -1092,7 +1091,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -1407,18 +1405,6 @@ dependencies = [
  "quote",
  "syn",
  "wasm-bindgen-shared",
-]
-
-[[package]]
-name = "wasm-bindgen-futures"
-version = "0.4.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb6ec270a31b1d3c7e266b999739109abce8b6c87e4b31fcfcd788b65267395"
-dependencies = [
- "cfg-if",
- "js-sys",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]

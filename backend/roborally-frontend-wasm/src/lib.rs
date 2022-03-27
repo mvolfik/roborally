@@ -14,21 +14,19 @@
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 mod asset;
-mod store;
 mod utils;
 
-use crate::{asset::AssetMap, store::Writable};
-use futures::channel::oneshot::{channel, Receiver};
+use crate::asset::AssetMap;
 use roborally_structs::{
-    transport::{ClientMessage, ConnectInfo, ServerMessage},
-    wrapper::CardWrapper,
+    card::wrapper::CardWrapper,
+    game_state::PlayerGameStateView,
+    transport::{ClientMessage, ServerMessage},
 };
 
-use js_sys::{ArrayBuffer, Function, Uint8Array};
+use js_sys::Function;
 use std::panic;
-use utils::await_event;
 use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::{console, window, MessageEvent, WebSocket};
+use web_sys::console;
 
 ///// INIT /////
 #[wasm_bindgen(start)]
@@ -37,139 +35,83 @@ pub fn init_panic_hook() {
 }
 ///// /INIT /////
 
-enum ConnectionState {
-    WaitingForInitData,
-    InGame,
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "(val: PlayerGameStateView) => void")]
+    pub type SetStateFunction;
+
+    #[wasm_bindgen(typescript_type = "(msg: string) => void")]
+    pub type NotifyFunction;
 }
 
-fn handle_error(e: impl JsCast, conn: &WebSocket) {
-    console::error_1(&e.unchecked_into());
-    if let Err(closing_error) = conn.close() {
-        console::error_2(
-            &"Additional error encountered when attempted to close connection".into(),
-            &closing_error,
-        );
-    };
+impl SetStateFunction {
+    fn call(self, state: PlayerGameStateView) -> Result<(), JsValue> {
+        self.unchecked_into::<Function>()
+            .call1(&JsValue::UNDEFINED, &state.into())?;
+        Ok(())
+    }
 }
 
-fn create_ws_message_handler(connection: WebSocket) -> (Function, Receiver<GameConnectionResult>) {
-    let mut connection_state = ConnectionState::WaitingForInitData;
-    let mut store = Writable::new(JsValue::UNDEFINED);
-    let (resolve, receiver) = channel();
-    let mut resolve_opt = Some(resolve);
-    let closure = move |event: MessageEvent| {
-        let buffer: ArrayBuffer = match event.data().dyn_into() {
-            Ok(v) => v,
-            Err(e) => {
-                handle_error(e, &connection);
-                return;
-            }
-        };
-        let message: ServerMessage =
-            match rmp_serde::from_slice(&Uint8Array::new(&buffer.unchecked_into()).to_vec()) {
-                Ok(v) => v,
-                Err(e) => {
-                    handle_error(Into::<JsValue>::into(e.to_string()), &connection);
-                    return;
-                }
-            };
-        console::log_1(&format!("{:?}", message).into());
-        let new_state = match (&connection_state, message) {
-            (ConnectionState::WaitingForInitData, ServerMessage::InitInfo { map, state }) => {
-                connection_state = ConnectionState::InGame;
-                if let Some(res) = resolve_opt.take() {
-                    if res
-                        .send(GameConnectionResult {
-                            store: Writable::clone(&store),
-                            assets_map: map.into(),
-                            connection: connection.clone(),
-                        })
-                        .is_err()
-                    {
-                        handle_error(
-                            Into::<JsValue>::into(
-                                "Receiver cancelled before connection was established",
-                            ),
-                            &connection,
-                        );
-                        return;
-                    }
-                }
-                state
-            }
-            (ConnectionState::InGame, ServerMessage::SetState(state)) => state,
-            _ => {
-                handle_error(
-                    Into::<JsValue>::into("Server and client state got out of sync"),
-                    &connection,
-                );
-                return;
-            }
-        };
-        store.set(new_state.into());
-    };
-    (
-        Closure::<dyn FnMut(MessageEvent)>::new(closure)
-            .into_js_value()
-            .unchecked_into(),
-        receiver,
-    )
+impl NotifyFunction {
+    fn call(self, msg: String) -> Result<(), JsValue> {
+        self.unchecked_into::<Function>()
+            .call1(&JsValue::UNDEFINED, &msg.into())?;
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]
-pub struct GameConnectionResult {
-    store: Writable,
-    assets_map: AssetMap,
-    connection: WebSocket,
-}
+pub struct MessageProcessor;
 
 #[wasm_bindgen]
-impl GameConnectionResult {
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn store(&self) -> Writable {
-        self.store.clone()
+impl MessageProcessor {
+    pub fn expect_init_message(
+        bytes: &[u8],
+        set_state: SetStateFunction,
+    ) -> Result<AssetMap, JsValue> {
+        match rmp_serde::from_slice::<ServerMessage>(bytes)
+            .map_err::<JsValue, _>(|e| e.to_string().into())?
+        {
+            ServerMessage::Notice(msg) => Err(msg.into()),
+            ServerMessage::InitInfo { map, state } => {
+                set_state.call(state)?;
+                Ok(map.into())
+            }
+            _ => Err("Unexpected error when initializing connection".into()),
+        }
     }
-    #[wasm_bindgen(getter)]
-    #[must_use]
-    pub fn assets_map(&self) -> AssetMap {
-        self.assets_map.clone()
+
+    pub fn handle_message(
+        bytes: &[u8],
+        set_state: SetStateFunction,
+        notify: NotifyFunction,
+    ) -> Result<(), JsValue> {
+        match rmp_serde::from_slice::<ServerMessage>(bytes)
+            .map_err::<JsValue, _>(|e| e.to_string().into())?
+        {
+            ServerMessage::Notice(msg) => notify.call(msg)?,
+            ServerMessage::SetState(state) => {
+                set_state.call(state)?;
+            }
+            _ => notify.call(format!("Error: unexpected message from server"))?,
+        }
+        Ok(())
     }
-    pub fn program(
-        &self,
+
+    pub fn create_init_message(name: String, seat: usize) -> Vec<u8> {
+        rmp_serde::to_vec(&ClientMessage::Init { name, seat }).unwrap()
+    }
+
+    pub fn create_program_cards_message(
         card1: &CardWrapper,
         card2: &CardWrapper,
         card3: &CardWrapper,
         card4: &CardWrapper,
         card5: &CardWrapper,
-    ) -> Result<(), JsValue> {
-        self.connection.send_with_u8_array(
-            &rmp_serde::to_vec(&ClientMessage::Program([
-                **card1, **card2, **card3, **card4, **card5,
-            ]))
-            .map_err(|e| JsValue::from(e.to_string()))?,
-        )
+    ) -> Vec<u8> {
+        rmp_serde::to_vec(&ClientMessage::Program([
+            **card1, **card2, **card3, **card4, **card5,
+        ]))
+        .unwrap()
     }
-}
-
-#[wasm_bindgen]
-pub async fn connect_to_game(connect_info: ConnectInfo) -> Result<GameConnectionResult, JsValue> {
-    let loc = window().unwrap().location();
-    let ws = WebSocket::new(&format!(
-        "ws{}://{}/websocket/game?{}",
-        if loc.protocol()? == "https:" { "s" } else { "" },
-        loc.host()?,
-        connect_info.to_query_string().to_string()
-    ))?;
-    ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
-    let (handler, init_future) = create_ws_message_handler(ws.clone());
-    ws.add_event_listener_with_callback("message", &handler)?;
-
-    await_event(&ws, "open")?
-        .await
-        .map_err(|_| "failed to establish connection")?;
-
-    Ok(init_future
-        .await
-        .map_err(|_| "failed to establish connection")?)
 }

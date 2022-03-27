@@ -9,10 +9,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "^0.1.7"
-futures = "^0.3.21"
 js-sys = "^0.3.56"
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["client"]}
 wasm-bindgen = {version = "^0.2.79", features = ["nightly", "enable-interning"]}
-wasm-bindgen-futures = "^0.4.29"
-web-sys = {version = "^0.3.56", features = ["console", "WebSocket", "Window", "Location", "EventTarget", "MessageEvent", "BinaryType", "AddEventListenerOptions"]}
+web-sys = {version = "^0.3.56", features = ["console"]}

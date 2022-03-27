@@ -12,37 +12,45 @@
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 #![feature(let_else)]
+#![feature(async_closure)]
+#![feature(array_zip)]
 
 mod game;
 mod game_connection;
 mod parser;
 
-use std::{
-    collections::HashMap,
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, str::FromStr, sync::Mutex};
 
 use crate::{game::Game, game_connection::GameConnection};
 
+use actix::{Actor, Addr};
 use actix_files::Files;
 use actix_web::{
-    error::ErrorBadRequest, http::header::ContentType, web, App, Error, HttpRequest, HttpResponse,
-    HttpServer,
+    error::{ErrorBadRequest, ErrorNotFound},
+    http::header::ContentType,
+    web, App, Error, HttpRequest, HttpResponse, HttpServer,
 };
 use actix_web_actors::ws;
+use futures::future::join_all;
+use game::RequestNameSeats;
 use rand::random;
-use roborally_structs::{game_map::GameMap, transport::ConnectInfo};
+use roborally_structs::game_map::GameMap;
 use serde::{Deserialize, Serialize};
 
 async fn game_handler(
     state: web::Data<AppState>,
     req: HttpRequest,
-    info: web::Query<ConnectInfo>,
+    game_id: web::Path<u64>,
     stream: web::Payload,
 ) -> Result<HttpResponse, Error> {
-    let actor = { GameConnection::new(&mut state.games.lock().unwrap(), info.0)? };
-    ws::start(actor, &req, stream)
+    let game = {
+        let games = state.games.lock().unwrap();
+        games
+            .get(&game_id)
+            .ok_or_else(|| ErrorNotFound("Game not found"))?
+            .clone()
+    };
+    ws::start(GameConnection { game, seat: None }, &req, stream)
 }
 
 #[derive(Deserialize)]
@@ -66,9 +74,7 @@ async fn new_game_handler(
         .get(&map_name)
         .ok_or_else(|| ErrorBadRequest("unknown map"))?
         .clone();
-    let game = Arc::new(Mutex::new(
-        Game::new(map, players, name).map_err(|e| ErrorBadRequest(e))?,
-    ));
+    let game = Game::new(map, players, name).map_err(|e| ErrorBadRequest(e))?;
 
     let mut id = random();
     {
@@ -78,7 +84,7 @@ async fn new_game_handler(
                 id = random();
             }
         }
-        games.insert(id, game);
+        games.insert(id, game.start());
     }
     Ok(HttpResponse::Ok()
         .content_type(ContentType::plaintext())
@@ -88,31 +94,33 @@ async fn new_game_handler(
 #[derive(Serialize)]
 struct GameListItem {
     id: String,
-    players_connected: u8,
-    players_n: u8,
+    seats: Vec<Option<String>>,
     name: String,
 }
 
 async fn list_games_handler(state: web::Data<AppState>) -> web::Json<Vec<GameListItem>> {
-    let games = state.games.lock().unwrap();
-    let games_list: Vec<_> = games
-        .iter()
-        .map(|(id, game_mutex)| {
-            let game = game_mutex.lock().unwrap();
-            GameListItem {
-                id: id.to_string(),
-                players_connected: 0,
-                players_n: game.players.len() as u8,
-                name: game.name.clone(),
-            }
-        })
+    let addrs: Vec<_> = {
+        let games = state.games.lock().unwrap();
+        games
+            .iter()
+            .map(|(i, g)| (i.to_string(), g.clone()))
+            .collect()
+    };
+    let game_info_promises: Vec<_> = addrs
+        .into_iter()
+        .map(async move |(id, game)| (id, game.send(RequestNameSeats).await))
         .collect();
-    web::Json(games_list)
+    web::Json(
+        join_all(game_info_promises)
+            .await
+            .into_iter()
+            .filter_map(|(id, x)| x.ok().map(|(name, seats)| GameListItem { id, seats, name }))
+            .collect(),
+    )
 }
 
-#[derive(Default)]
 struct AppState {
-    games: Mutex<HashMap<u64, Arc<Mutex<Game>>>>,
+    games: Mutex<HashMap<u64, Addr<Game>>>,
     maps: HashMap<String, GameMap>,
 }
 
@@ -146,7 +154,7 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
-            .route("/websocket/game", web::get().to(game_handler))
+            .route("/websocket/game/{game_id}", web::get().to(game_handler))
             .route("/api/list-games", web::get().to(list_games_handler))
             .route("/api/new-game", web::post().to(new_game_handler))
             .service(Files::new("/", "../roborally-frontend/dist").index_file("index.html"))

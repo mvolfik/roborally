@@ -1,4 +1,7 @@
-use crate::{position::Position, tile_type::TileType};
+use crate::{
+    position::{Direction, Position},
+    tile_type::TileType,
+};
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::struct_excessive_bools)]
@@ -10,6 +13,17 @@ pub struct WallsDescription {
     pub right: bool,
     pub down: bool,
     pub left: bool,
+}
+
+impl WallsDescription {
+    pub fn get(&self, dir: &Direction) -> bool {
+        match dir {
+            Direction::Up => self.up,
+            Direction::Right => self.right,
+            Direction::Down => self.down,
+            Direction::Left => self.left,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

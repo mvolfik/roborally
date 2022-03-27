@@ -2,45 +2,11 @@ use roborally_structs::{
     game_map::GameMap,
     position::Direction,
     tile::{Grid, Tile},
-    tile_type::{BeltEnd, TileType},
+    tile_type::{BeltEnd, TileType}, transform::Transform,
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
 use crate::create_array_type;
-
-/// Transformation matrix
-///
-/// (0, 2)
-/// (1, 3)
-///
-/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/transform-function/matrix()>
-#[non_exhaustive]
-#[derive(Default, Clone, Copy)]
-pub struct Transform {
-    pub(crate) rotate: Option<f64>,
-    pub(crate) flip_x: bool,
-    pub(crate) translate: Option<(f64, f64)>,
-}
-
-impl std::fmt::Display for Transform {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.flip_x {
-            write!(f, "scaleX(-1)")?;
-        }
-        if let Some(deg) = self.rotate {
-            write!(f, "rotate({}deg)", if self.flip_x { -deg } else { deg })?;
-        }
-        if let Some((x, y)) = self.translate {
-            write!(
-                f,
-                "translate({}px,{}px)",
-                if self.flip_x { -x } else { x },
-                y
-            )?;
-        }
-        Ok(())
-    }
-}
 
 #[wasm_bindgen]
 #[derive(Clone)]

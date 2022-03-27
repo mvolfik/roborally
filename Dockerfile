@@ -1,4 +1,4 @@
-FROM rust:1 as rust-wasm-builder
+FROM docker.io/library/rust:1 as rust-wasm-builder
 WORKDIR /builder
 RUN rustup override set nightly-2022-03-26
 RUN rustup target add --toolchain nightly-2022-03-26 wasm32-unknown-unknown
@@ -29,7 +29,7 @@ RUN cd backend/roborally-frontend-wasm && wasm-pack build --release --target web
 
 
 
-FROM node:16 as node-builder
+FROM docker.io/library/node:16 as node-builder
 WORKDIR /builder
 
 COPY ./roborally-frontend/package.json ./roborally-frontend/yarn.lock ./roborally-frontend/
@@ -43,7 +43,7 @@ RUN cd roborally-frontend && ln -s ../backend/roborally-frontend-wasm/pkg/ front
 
 
 
-FROM rust:1 as rust-server-builder
+FROM docker.io/library/rust:1 as rust-server-builder
 WORKDIR /builder
 RUN rustup override set nightly-2022-03-26
 

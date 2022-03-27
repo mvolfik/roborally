@@ -9,6 +9,7 @@ actix = "^0.13.0"
 actix-files = "^0.6.0"
 actix-web = "^4.0.0"
 actix-web-actors = "^4.1.0"
+futures = "^0.3.21"
 rand = "^0.8.5"
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["server"]}

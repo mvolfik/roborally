@@ -10,3 +10,12 @@ Web version of the RoboRally board game – high school graduation project
 git archive -o source-code.tar.gz master && env DOCKER_BUILDKIT=1 docker build -t roborally:dev .
 docker run --rm -p 80:80 -e PORT=80 roborally:dev
 ```
+## Rule differences
+
+- no energy cubes & powerups
+- no board lasers (yet?)
+- 1 reboot token for whole map
+- spawn points are assigned randomly (no player choice)
+- running out of SPAM cards isn't supported (yet) (no player choice)
+- reboot token has set orientation (no player choice)
+- belt movements also sorted by priority antenna (no move-to-same-tile edge-case)

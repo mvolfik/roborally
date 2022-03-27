@@ -1,80 +1,109 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::time::Duration;
 
-use actix::{Actor, ActorContext, StreamHandler};
-use actix_web::{error::ErrorBadRequest, Error};
+use actix::fut::wrap_future;
+use actix::{Actor, ActorFutureExt, Addr, Handler, Message, StreamHandler};
+use actix::{ActorTryFutureExt, AsyncContext};
 use actix_web_actors::ws;
-use roborally_structs::transport::{ConnectInfo, ServerMessage};
+use futures::Future;
+use roborally_structs::transport::{ClientMessage, ServerMessage};
 
-use crate::game::Game;
+use crate::game::{Disconnect, Game, Program, RequestConnect};
 
-#[derive(Debug)]
 pub struct GameConnection {
-    pub game: Arc<Mutex<Game>>,
-    pub player_i: usize,
-    _prevent_construct: (),
-}
-
-impl GameConnection {
-    #[must_use]
-    pub fn new(games: &HashMap<u64, Arc<Mutex<Game>>>, info: ConnectInfo) -> Result<Self, Error> {
-        let game_arc = games
-            .get(&info.game_id)
-            .ok_or_else(|| ErrorBadRequest("invalid game id"))?;
-        let conn = Self {
-            game: game_arc.clone(),
-            player_i: info.player_i,
-            _prevent_construct: (),
-        };
-
-        let mut game = game_arc.lock().unwrap();
-        game.players
-            .get_mut(info.player_i)
-            .ok_or_else(|| ErrorBadRequest("player_i out of range"))?
-            .connected = Some((info.name().to_string(), ()));
-
-        // todo : share connection somehow
-        Ok(conn)
-    }
+    pub game: Addr<Game>,
+    /// If none - the connection isn't yet fully initialized
+    pub seat: Option<usize>,
 }
 
 impl Actor for GameConnection {
     type Context = ws::WebsocketContext<Self>;
+
+    fn stopping(&mut self, ctx: &mut Self::Context) -> actix::Running {
+        if let Some(seat) = self.seat {
+            self.game.do_send(Disconnect(seat));
+        }
+        actix::Running::Stop
+    }
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for GameConnection {
-    fn handle(&mut self, _msg: Result<ws::Message, ws::ProtocolError>, _ctx: &mut Self::Context) {
-        // match msg {
-        //     Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-        //     Ok(ws::Message::Text(text)) => ctx.text(text),
-        //     Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
-        //     _ => (),
-        // }
-        todo!()
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        let bytes = match msg {
+            Ok(ws::Message::Ping(msg)) => {
+                ctx.pong(&msg);
+                return;
+            }
+            Ok(ws::Message::Pong(_)) => return,
+            Ok(ws::Message::Close(_)) => {
+                ctx.close(None);
+                return;
+            }
+            Ok(ws::Message::Binary(b)) => b,
+            x => {
+                ctx.notify(CloseConnection(format!(
+                    "Received unknown message type: {:?}",
+                    x
+                )));
+                return;
+            }
+        };
+        let Ok(data) = rmp_serde::from_slice::<ClientMessage>(&bytes) else {
+            ctx.notify(CloseConnection("Corrupted message".to_string()));
+            return;
+        };
+
+        match (self.seat, data) {
+            (None, ClientMessage::Init { name, seat }) => {
+                self.game.do_send(RequestConnect {
+                    name,
+                    seat,
+                    weak_addr: ctx.address().downgrade(),
+                });
+                self.seat = Some(seat);
+            }
+            (Some(seat), ClientMessage::Program(cards)) => {
+                self.game.do_send(Program(seat, cards));
+            }
+            x => ctx.notify(CloseConnection(format!(
+                "Server and client got out of sync: {:?}",
+                x
+            ))),
+        }
     }
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let game = self.game.lock().unwrap();
-        let Some(state) = game
-        .get_state_for_player(self.player_i) else {
-            ctx.close(None);
-            return;
-        };
-
-        let Ok(msg) = rmp_serde::to_vec(&ServerMessage::InitInfo {
-            map: game.map.clone(),
-            state,
-        }) else {
-            ctx.close(None);
-            return;
-        };
-
-        ctx.binary(msg);
+        ctx.run_interval(Duration::from_secs(30), |_conn, ctx| {
+            ctx.ping(&[]);
+        });
     }
+}
 
-    fn finished(&mut self, ctx: &mut Self::Context) {
-        ctx.stop();
+pub struct ServerActorMessage(pub ServerMessage);
+impl Message for ServerActorMessage {
+    type Result = ();
+}
+
+impl Handler<ServerActorMessage> for GameConnection {
+    type Result = ();
+
+    fn handle(&mut self, msg: ServerActorMessage, ctx: &mut Self::Context) -> Self::Result {
+        ctx.binary(rmp_serde::to_vec(&msg.0).unwrap());
+    }
+}
+
+pub struct CloseConnection(pub String);
+impl Message for CloseConnection {
+    type Result = ();
+}
+impl Handler<CloseConnection> for GameConnection {
+    type Result = ();
+
+    fn handle(&mut self, msg: CloseConnection, ctx: &mut Self::Context) -> Self::Result {
+        println!("Disconnecting player: {}", &msg.0);
+        let addr = ctx.address();
+        ctx.spawn(
+            wrap_future::<_, Self>(addr.send(ServerActorMessage(ServerMessage::Notice(msg.0))))
+                .map(|res, _, ctx| ctx.close(None)),
+        );
     }
 }
