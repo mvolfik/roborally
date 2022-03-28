@@ -84,6 +84,7 @@
     top: calc(64px * var(--y));
     left: calc(64px * var(--x));
     transition: all 1s ease-in-out;
+    pointer-events: none;
   }
   div.outer {
     height: 100%;

@@ -91,6 +91,7 @@ impl MessageProcessor {
         {
             ServerMessage::Notice(msg) => notify.call(msg)?,
             ServerMessage::SetState(state) => {
+                console::log_1(&format!("{:?}", &state).into());
                 set_state.call(state)?;
             }
             _ => notify.call(format!("Error: unexpected message from server"))?,

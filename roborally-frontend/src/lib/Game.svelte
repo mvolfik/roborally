@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     AssetMap,
+    GamePhase,
     MessageProcessor,
     PlayerGameStateView,
   } from "../../frontend-wasm";
@@ -83,9 +84,10 @@
     <div class="map">
       <Map {map} {stateStore} />
     </div>
-    {#if $stateStore.is_programming}
-      <div class="programmer" transition:fly={{y: 200}}>
+    {#if $stateStore.phase === GamePhase.Programming}
+      <div class="programmer" transition:fly={{ y: 200 }}>
         <Programmer
+          {seat}
           initialCards={[...Array($stateStore.hand_len)].map((_, i) =>
             $stateStore.get_hand_card(i)
           )}
@@ -93,6 +95,31 @@
         />
       </div>
     {/if}
+    <div class="player-infoboxes">
+      {#each Array($stateStore.players) as _, player_i}
+        {@const player = $stateStore.get_player(player_i)}
+        {@const name = $stateStore.get_player(player_i).name}
+        {#if $stateStore.phase !== GamePhase.Moving}
+          <div style:--player-i={player_i} transition:fly={{ x: 100 }}>
+            {#if player_i === seat}
+              <div class="name self">You</div>
+            {:else if name === undefined}
+              <div class="name disconnected">
+                Seat {player_i + 1} (disconnected)
+              </div>
+            {:else}
+              <div class="name">{name}</div>
+            {/if}
+            <div>
+              Ready: <div
+                class="ready-indicator"
+                class:ready={$stateStore.is_ready_programming(player_i)}
+              />
+            </div>
+          </div>
+        {/if}
+      {/each}
+    </div>
   {/if}
 </div>
 
@@ -109,5 +136,43 @@
     left: 5vw;
     position: absolute;
     bottom: 0;
+  }
+
+  .player-infoboxes {
+    color: #eee;
+    position: absolute;
+    right: 0;
+    top: 2rem;
+  }
+
+  .player-infoboxes > div {
+    margin-top: 2rem;
+    background-color: hsla(
+      calc(3.979rad + var(--player-i) * 0.9rad),
+      93%,
+      22%,
+      0.62
+    );
+    padding: 1.5rem;
+    border-radius: 5px 0 0 5px;
+  }
+
+  .name.self {
+    color: rgb(15, 187, 230);
+  }
+  .name.disconnected {
+    color: rgb(255, 95, 37);
+  }
+
+  .ready-indicator {
+    width: 1rem;
+    background-color: red;
+    display: inline flow-root;
+    height: 1rem;
+    vertical-align: middle;
+  }
+
+  .ready-indicator.ready {
+    background-color: green;
   }
 </style>

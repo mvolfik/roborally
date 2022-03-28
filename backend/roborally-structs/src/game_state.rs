@@ -74,6 +74,14 @@ impl PlayerGameStateView {
 
 #[cfg(feature = "client")]
 #[wasm_bindgen]
+pub enum GamePhase {
+    Programming,
+    ProgrammingMyselfDone,
+    Moving,
+}
+
+#[cfg(feature = "client")]
+#[wasm_bindgen]
 impl PlayerGameStateView {
     #[wasm_bindgen(getter)]
     pub fn hand_len(&self) -> usize {
@@ -83,11 +91,14 @@ impl PlayerGameStateView {
         Some(crate::card::wrapper::CardWrapper(*self.hand.get(i)?))
     }
     #[wasm_bindgen(getter)]
-    pub fn is_programming(&self) -> bool {
-        matches!(
-            self.phase,
-            GamePhaseView::Programming { my_cards: None, .. }
-        )
+    pub fn phase(&self) -> GamePhase {
+        match self.phase {
+            GamePhaseView::Programming { my_cards: None, .. } => GamePhase::Programming,
+            GamePhaseView::Programming {
+                my_cards: Some(_), ..
+            } => GamePhase::ProgrammingMyselfDone,
+            GamePhaseView::Moving { .. } => GamePhase::Moving,
+        }
     }
     #[wasm_bindgen(getter)]
     pub fn players(&self) -> usize {
@@ -100,6 +111,14 @@ impl PlayerGameStateView {
                 name.as_ref().map(|x| x.clone()),
                 i,
             ))
+        } else {
+            None
+        }
+    }
+
+    pub fn is_ready_programming(&self, i: usize) -> Option<bool> {
+        if let GamePhaseView::Programming { ready, .. } = &self.phase {
+            ready.get(i).copied()
         } else {
             None
         }

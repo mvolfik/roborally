@@ -5,6 +5,7 @@
   import { getCardAsset } from "./utils";
   import { flip } from "svelte/animate";
 
+  export let seat: number;
   type CardWithId = { originalCard: CardWrapper; asset: string; id: number };
   type MaybeCard = [CardWithId] | [];
   export let initialCards: Array<CardWrapper>;
@@ -33,7 +34,7 @@
   let eventSource = createEventDispatcher();
 </script>
 
-<div class="outer">
+<div class="outer" style:--player-i={seat}>
   <p class="hand-title">Cards in your hand</p>
   <p class="registers-title">
     Programmed registers
@@ -97,7 +98,7 @@
 
     --programmer-inner-width: calc(var(--programmer-width) - 2 * 20px);
 
-    background-color: rgba(60, 60, 60, 0.9);
+    background-color: hsla(calc(228 + var(--player-i) * 0.7 / 3.9 * 360), 93%, 22%, 0.62);
     border-radius: 20px 20px 0 0;
     box-sizing: border-box;
     display: grid;

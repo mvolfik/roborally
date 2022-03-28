@@ -103,7 +103,7 @@ impl Handler<CloseConnection> for GameConnection {
         let addr = ctx.address();
         ctx.spawn(
             wrap_future::<_, Self>(addr.send(ServerActorMessage(ServerMessage::Notice(msg.0))))
-                .map(|res, _, ctx| ctx.close(None)),
+                .map(|_, _, ctx| ctx.close(None)),
         );
     }
 }

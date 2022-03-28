@@ -1,6 +1,6 @@
 use std::{collections::HashSet, iter::repeat, mem, time::Duration};
 
-use actix::{Actor, AsyncContext, Context, Handler, Message, Response, WeakAddr};
+use actix::{clock::sleep, Actor, AsyncContext, Context, Handler, Message, Response, WeakAddr};
 use rand::{prelude::SliceRandom, thread_rng};
 use roborally_structs::{
     card::Card,
@@ -59,6 +59,14 @@ impl Player {
         };
         p.hand = p.draw_n(9);
         p
+    }
+
+    fn send_message(&self, msg: ServerMessage) {
+        if let Some((_, weak_addr)) = &self.connected {
+            if let Some(addr) = weak_addr.upgrade() {
+                addr.do_send(ServerActorMessage(msg))
+            }
+        }
     }
 
     pub fn draw_one(&mut self) -> Card {
@@ -180,13 +188,9 @@ impl Game {
         })
     }
 
-    fn notify_update(&self, ctx: &mut <Self as Actor>::Context) {
+    fn notify_update(&self) {
         for (i, player) in self.players.iter().enumerate() {
-            send_message(
-                player,
-                ServerMessage::SetState(self.get_state_for_player(i)),
-                ctx,
-            )
+            player.send_message(ServerMessage::SetState(self.get_state_for_player(i)))
         }
     }
 
@@ -337,14 +341,7 @@ impl Handler<RequestConnect> for Game {
             map: self.map.clone(),
             state: self.get_state_for_player(seat),
         }));
-    }
-}
-
-fn send_message(player: &Player, msg: ServerMessage, _ctx: &mut <Game as Actor>::Context) {
-    if let Some((_, weak_addr)) = &player.connected {
-        if let Some(addr) = weak_addr.upgrade() {
-            addr.do_send(ServerActorMessage(msg))
-        }
+        self.notify_update();
     }
 }
 
@@ -357,19 +354,15 @@ impl Handler<Program> for Game {
     fn handle(&mut self, Program(seat, cards): Program, ctx: &mut Self::Context) {
         let player = self.players.get_mut(seat).unwrap();
         let GamePhase::Programming(vec) = &mut self.phase else {
-            send_message(
-                player,
+            player.send_message(
                 ServerMessage::Notice("Programming phase isn't active right now".to_string()),
-                ctx,
             );
             return;
         };
         if *cards.first().unwrap() == Card::Again {
-            send_message(
-                player,
-                ServerMessage::Notice("Can't program Again in first slot".to_string()),
-                ctx,
-            );
+            player.send_message(ServerMessage::Notice(
+                "Can't program Again in first slot".to_string(),
+            ));
             return;
         }
         let mut used_hand_indexes = HashSet::new();
@@ -381,26 +374,18 @@ impl Handler<Program> for Game {
                 }
             }
             // did not find this card (unused) in hand
-            send_message(
-                player,
-                ServerMessage::Notice(format!(
-                    "No cheating! {:?} isn't in your hand (enough times)",
-                    picked_card
-                )),
-                ctx,
-            );
+            player.send_message(ServerMessage::Notice(format!(
+                "No cheating! {:?} isn't in your hand (enough times)",
+                picked_card
+            )));
             return;
         }
 
         match vec.get_mut(seat).unwrap() {
             Some(_) => {
-                send_message(
-                    player,
-                    ServerMessage::Notice(
-                        "You have already programmed your cards for this round".to_string(),
-                    ),
-                    ctx,
-                );
+                player.send_message(ServerMessage::Notice(
+                    "You have already programmed your cards for this round".to_string(),
+                ));
                 return;
             }
             x @ None => *x = Some(cards),
@@ -421,7 +406,7 @@ impl Handler<Program> for Game {
             };
             ctx.notify_later(Move, Duration::from_secs(1));
         }
-        self.notify_update(ctx)
+        self.notify_update()
     }
 }
 
@@ -459,7 +444,10 @@ impl Handler<Disconnect> for Game {
     type Result = ();
 
     fn handle(&mut self, Disconnect(seat): Disconnect, _ctx: &mut Self::Context) -> Self::Result {
-        self.players.get_mut(seat).map(|p| p.connected = None);
+        if let Some(p) = self.players.get_mut(seat) {
+            p.connected = None;
+        };
+        self.notify_update();
     }
 }
 
@@ -655,7 +643,7 @@ impl Handler<Move> for Game {
                     }
                     self.phase =
                         GamePhase::Programming(repeat(None).take(self.players.len()).collect());
-                    self.notify_update(ctx);
+                    self.notify_update();
                     return; // to prevent scheduling move again
                 } else {
                     *register += 1;
@@ -663,7 +651,7 @@ impl Handler<Move> for Game {
                 }
             }
         }
-        self.notify_update(ctx);
+        self.notify_update();
         ctx.notify_later(Move, Duration::from_secs(1));
     }
 }
