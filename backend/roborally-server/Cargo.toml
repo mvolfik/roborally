@@ -5,12 +5,12 @@ name = "roborally-server"
 version = "0.1.0"
 
 [dependencies]
-actix = "^0.13.0"
-actix-files = "^0.6.0"
-actix-web = "^4.0.0"
-actix-web-actors = "^4.1.0"
 futures = "^0.3.21"
+http = "^0.2.6"
+log = "^0.4.16"
 rand = "^0.8.5"
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["server"]}
 serde = {version = "^1.0.136", features = ["derive"]}
+tokio = {version = "1.0", features = ["macros", "rt-multi-thread"]}
+warp = "^0.3.2"

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CardWrapper } from "../../frontend-wasm";
-  import { dndzone, type DndEvent } from "svelte-dnd-action";
+  import { dndzone } from "svelte-dnd-action";
   import { createEventDispatcher, onMount } from "svelte";
   import { getCardAsset } from "./utils";
   import { flip } from "svelte/animate";
@@ -31,7 +31,16 @@
       programmedCards[register_i] = e.detail.items;
     }
   }
-  let eventSource = createEventDispatcher();
+  let eventSource =
+    createEventDispatcher<{
+      programmingDone: [
+        CardWrapper,
+        CardWrapper,
+        CardWrapper,
+        CardWrapper,
+        CardWrapper
+      ];
+    }>();
 </script>
 
 <div class="outer" style:--player-i={seat}>
@@ -39,7 +48,7 @@
   <p class="registers-title">
     Programmed registers
     <button
-      disabled={ programmedCards.some((c) => c.length !== 1)}
+      disabled={programmedCards.some((c) => c.length !== 1)}
       on:click={() => {
         eventSource(
           "programmingDone",
@@ -98,7 +107,12 @@
 
     --programmer-inner-width: calc(var(--programmer-width) - 2 * 20px);
 
-    background-color: hsla(calc(228 + var(--player-i) * 0.7 / 3.9 * 360), 93%, 22%, 0.62);
+    background-color: hsla(
+      calc(228 + var(--player-i) * 0.7 / 3.9 * 360),
+      93%,
+      22%,
+      0.62
+    );
     border-radius: 20px 20px 0 0;
     box-sizing: border-box;
     display: grid;

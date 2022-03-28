@@ -2,7 +2,8 @@ use roborally_structs::{
     game_map::GameMap,
     position::Direction,
     tile::{Grid, Tile},
-    tile_type::{BeltEnd, TileType}, transform::Transform,
+    tile_type::{BeltEnd, TileType},
+    transform::Transform,
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 

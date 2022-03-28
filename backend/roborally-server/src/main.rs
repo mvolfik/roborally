@@ -14,43 +14,29 @@
 #![feature(let_else)]
 #![feature(async_closure)]
 #![feature(array_zip)]
+#![feature(never_type)]
+#![feature(label_break_value)]
+#![feature(let_chains)]
 
 mod game;
 mod game_connection;
 mod parser;
 
-use std::{collections::HashMap, str::FromStr, sync::Mutex};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::{game::Game, game_connection::GameConnection};
-
-use actix::{Actor, Addr};
-use actix_files::Files;
-use actix_web::{
-    error::{ErrorBadRequest, ErrorNotFound},
-    http::header::ContentType,
-    web, App, Error, HttpRequest, HttpResponse, HttpServer,
-};
-use actix_web_actors::ws;
 use futures::future::join_all;
-use game::RequestNameSeats;
+use game::Game;
+use game_connection::PlayerConnection;
+use http::StatusCode;
 use rand::random;
 use roborally_structs::game_map::GameMap;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+use warp::{reply::with_status, Filter, Reply};
 
-async fn game_handler(
-    state: web::Data<AppState>,
-    req: HttpRequest,
-    game_id: web::Path<u64>,
-    stream: web::Payload,
-) -> Result<HttpResponse, Error> {
-    let game = {
-        let games = state.games.lock().unwrap();
-        games
-            .get(&game_id)
-            .ok_or_else(|| ErrorNotFound("Game not found"))?
-            .clone()
-    };
-    ws::start(GameConnection { game, seat: None }, &req, stream)
+async fn socket_connect_handler(game_id: u64, ws: warp::ws::Ws, games_lock: Games) -> impl Reply {
+    let game = games_lock.read().await.get(&game_id).cloned();
+    ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
 #[derive(Deserialize)]
@@ -61,34 +47,33 @@ struct NewGameData {
 }
 
 async fn new_game_handler(
-    state: web::Data<AppState>,
-    info: web::Form<NewGameData>,
-) -> Result<HttpResponse, Error> {
-    let NewGameData {
+    maps: Maps,
+    games: Games,
+    NewGameData {
         players,
         map_name,
         name,
-    } = info.0;
-    let map = state
-        .maps
-        .get(&map_name)
-        .ok_or_else(|| ErrorBadRequest("unknown map"))?
-        .clone();
-    let game = Game::new(map, players, name).map_err(|e| ErrorBadRequest(e))?;
+    }: NewGameData,
+) -> impl Reply {
+    let Some(map) = maps.get(&map_name) else {
+        return with_status("Unknown map".to_string(), StatusCode::BAD_REQUEST)
+    };
+    let game = match Game::new(map.clone(), players, name) {
+        Ok(g) => g,
+        Err(e) => return with_status(e, StatusCode::BAD_REQUEST),
+    };
 
     let mut id = random();
     {
-        let mut games = state.games.lock().unwrap();
+        let mut games = games.write().await;
         {
             while games.contains_key(&id) {
                 id = random();
             }
         }
-        games.insert(id, game.start());
+        games.insert(id, Arc::new(RwLock::new(game)));
     }
-    Ok(HttpResponse::Ok()
-        .content_type(ContentType::plaintext())
-        .body(id.to_string()))
+    with_status(id.to_string(), StatusCode::CREATED)
 }
 
 #[derive(Serialize)]
@@ -98,42 +83,38 @@ struct GameListItem {
     name: String,
 }
 
-async fn list_games_handler(state: web::Data<AppState>) -> web::Json<Vec<GameListItem>> {
-    let addrs: Vec<_> = {
-        let games = state.games.lock().unwrap();
-        games
-            .iter()
-            .map(|(i, g)| (i.to_string(), g.clone()))
-            .collect()
-    };
-    let game_info_promises: Vec<_> = addrs
-        .into_iter()
-        .map(async move |(id, game)| (id, game.send(RequestNameSeats).await))
+async fn list_games_handler(games_lock: Games) -> impl Reply {
+    let games = games_lock.read().await;
+    let futures: Vec<_> = games
+        .iter()
+        .map(async move |(id, game_lock)| {
+            let game = game_lock.read().await;
+            GameListItem {
+                id: id.to_string(),
+                seats: game
+                    .players
+                    .iter()
+                    .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
+                    .collect(),
+                name: game.name.clone(),
+            }
+        })
         .collect();
-    web::Json(
-        join_all(game_info_promises)
-            .await
-            .into_iter()
-            .filter_map(|(id, x)| x.ok().map(|(name, seats)| GameListItem { id, seats, name }))
-            .collect(),
-    )
+    warp::reply::json(&join_all(futures).await)
 }
 
-struct AppState {
-    games: Mutex<HashMap<u64, Addr<Game>>>,
-    maps: HashMap<String, GameMap>,
-}
+type Games = Arc<RwLock<HashMap<u64, Arc<RwLock<Game>>>>>;
+type Maps = Arc<HashMap<String, GameMap>>;
 
 macro_rules! load_maps {
     [ $( $name: literal ),* ] => {
         {
-            use crate::parser::{Parse, ParseError};
+            use crate::parser::Parse;
             HashMap::from([
                 $(
                     (
                         $name.to_string(),
                         GameMap::parse(include_str!(concat!("../../../maps/", $name)), concat!("Map(", $name, ")"))
-                            .map_err(ParseError::get)
                             .unwrap(),
                     ),
                 )*
@@ -142,33 +123,52 @@ macro_rules! load_maps {
     }
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let maps = load_maps!["test.csv"];
+#[tokio::main]
+async fn main() {
+    let maps: Maps = Arc::new(load_maps!["test.csv"]);
     // Shared game state. web::Data uses Arc internally, so we create state outside the server factory, and the factory clones the Arc for each thread
-    let state = web::Data::new(AppState {
-        games: Default::default(),
-        maps,
-    });
 
-    let server = HttpServer::new(move || {
-        App::new()
-            .app_data(state.clone())
-            .route("/websocket/game/{game_id}", web::get().to(game_handler))
-            .route("/api/list-games", web::get().to(list_games_handler))
-            .route("/api/new-game", web::post().to(new_game_handler))
-            .service(Files::new("/", "../roborally-frontend/dist").index_file("index.html"))
-    })
-    .bind(
-        match std::env::var("PORT")
-            .ok()
-            .map(|p| u16::from_str(&p).ok())
-            .flatten()
-        {
-            Some(p) => ("0.0.0.0", p),
-            None => ("127.0.0.1", 8080),
-        },
-    )?;
-    println!("Running");
-    server.run().await
+    let games: Games = Games::default();
+    // state is a allow-anything "filter" which clones the games Arc and passes it as a context
+    let create_games_state = move || {
+        let arc = games.clone();
+        warp::any().map(move || arc.clone())
+    };
+    let create_maps_state = move || {
+        let arc = maps.clone();
+        warp::any().map(move || arc.clone())
+    };
+    let api = warp::path("api");
+    let list_games = api
+        .and(warp::path("list-games").and(warp::path::end()))
+        .and(warp::get())
+        .and(create_games_state())
+        .then(list_games_handler);
+    let new_game = api
+        .and(warp::path("new-game").and(warp::path::end()))
+        .and(warp::post())
+        .and(create_maps_state())
+        .and(create_games_state())
+        .and(warp::body::form::<NewGameData>())
+        .then(new_game_handler);
+
+    let socket = warp::path!("websocket" / "game" / u64)
+        .and(warp::ws())
+        .and(create_games_state())
+        .then(socket_connect_handler);
+
+    let static_files = warp::fs::dir("../roborally-frontend/dist");
+
+    let routes = list_games.or(new_game).or(socket).or(static_files);
+    let ip_port = match std::env::var("PORT")
+        .ok()
+        .map(|p| u16::from_str(&p).ok())
+        .flatten()
+    {
+        Some(p) => ([0, 0, 0, 0], p),
+        None => ([127, 0, 0, 1], 8080),
+    };
+    let server = warp::serve(routes).run(ip_port);
+    eprintln!("Running at {:?}", ip_port);
+    server.await
 }

@@ -8,8 +8,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum RegisterMovePhase {
-    Started,
-    PlayerMove,
+    PlayerCards,
     FastBelts,
     SlowBelts,
     PushPanels,
@@ -24,7 +23,7 @@ pub enum RegisterMovePhase {
 pub enum GamePhaseView {
     Moving {
         register: usize,
-        register_phase_done: RegisterMovePhase,
+        register_phase: RegisterMovePhase,
         // Only cards for this register are visible
         cards: Vec<Card>,
     },
@@ -32,6 +31,7 @@ pub enum GamePhaseView {
         ready: Vec<bool>,
         my_cards: Option<[Card; 5]>,
     },
+    HasWinner(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +40,7 @@ pub enum GamePhaseView {
 pub struct PlayerPublicState {
     pub position: Position,
     pub direction: Direction,
-    pub checkpoint: u8,
+    pub checkpoint: usize,
     pub is_rebooting: bool,
 }
 
@@ -78,6 +78,7 @@ pub enum GamePhase {
     Programming,
     ProgrammingMyselfDone,
     Moving,
+    HasWinner,
 }
 
 #[cfg(feature = "client")]
@@ -98,6 +99,7 @@ impl PlayerGameStateView {
                 my_cards: Some(_), ..
             } => GamePhase::ProgrammingMyselfDone,
             GamePhaseView::Moving { .. } => GamePhase::Moving,
+            GamePhaseView::HasWinner(..) => GamePhase::HasWinner,
         }
     }
     #[wasm_bindgen(getter)]

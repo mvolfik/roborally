@@ -1,6 +1,13 @@
-use std::{collections::HashSet, iter::repeat, mem, time::Duration};
+use std::{
+    collections::HashSet,
+    iter::repeat,
+    mem,
+    ops::DerefMut,
+    sync::{Arc, Weak},
+    time::Duration,
+};
 
-use actix::{clock::sleep, Actor, AsyncContext, Context, Handler, Message, Response, WeakAddr};
+use futures::future::join_all;
 use rand::{prelude::SliceRandom, thread_rng};
 use roborally_structs::{
     card::Card,
@@ -10,8 +17,9 @@ use roborally_structs::{
     tile_type::{BeltEnd, TileType},
     transport::ServerMessage,
 };
+use tokio::{sync::RwLock, time::sleep};
 
-use crate::game_connection::{CloseConnection, GameConnection, ServerActorMessage};
+use crate::game_connection::PlayerConnection;
 
 #[derive(Clone, Copy, Debug)]
 pub struct DamagePiles {
@@ -21,18 +29,13 @@ pub struct DamagePiles {
     pub trojan: u8,
 }
 
-pub struct StateUpdate(pub PlayerGameStateView);
-impl Message for StateUpdate {
-    type Result = ();
-}
-
 #[derive(Debug)]
 pub struct Player {
     public_state: PlayerPublicState,
     draw_pile: Vec<Card>,
     hand: Vec<Card>,
     discard_pile: Vec<Card>,
-    pub connected: Option<(String, WeakAddr<GameConnection>)>,
+    pub connected: Weak<PlayerConnection>,
 }
 
 const START_CARDS: [Card; 20] = {
@@ -55,17 +58,15 @@ impl Player {
             draw_pile: Vec::new(),
             hand: Vec::new(),
             discard_pile: START_CARDS.into(),
-            connected: None,
+            connected: Weak::new(),
         };
         p.hand = p.draw_n(9);
         p
     }
 
-    fn send_message(&self, msg: ServerMessage) {
-        if let Some((_, weak_addr)) = &self.connected {
-            if let Some(addr) = weak_addr.upgrade() {
-                addr.do_send(ServerActorMessage(msg))
-            }
+    async fn send_message(&self, msg: ServerMessage) {
+        if let Some(conn) = self.connected.upgrade() {
+            conn.socket.write().await.send_message(msg).await;
         }
     }
 
@@ -113,8 +114,9 @@ pub enum GamePhase {
     Moving {
         cards: Vec<[Card; 5]>,
         register: usize,
-        register_phase_done: RegisterMovePhase,
+        register_phase: RegisterMovePhase,
     },
+    HasWinner(usize),
 }
 
 #[derive(Debug)]
@@ -127,10 +129,6 @@ pub struct Game {
     _prevent_construct: (),
 }
 
-impl Actor for Game {
-    type Context = Context<Self>;
-}
-
 impl Game {
     pub fn get_state_for_player(&self, seat: usize) -> PlayerGameStateView {
         let this_player_state = self.players.get(seat).unwrap();
@@ -138,19 +136,20 @@ impl Game {
             GamePhase::Moving {
                 cards,
                 register,
-                register_phase_done,
+                register_phase,
             } => GamePhaseView::Moving {
                 cards: cards
                     .iter()
                     .map(|card_array| *card_array.get(*register).unwrap())
                     .collect(),
                 register: *register,
-                register_phase_done: *register_phase_done,
+                register_phase: *register_phase,
             },
             GamePhase::Programming(programmed) => GamePhaseView::Programming {
                 ready: programmed.iter().map(Option::is_some).collect(),
                 my_cards: *programmed.get(seat).unwrap(),
             },
+            GamePhase::HasWinner(player_i) => GamePhaseView::HasWinner(*player_i),
         };
         PlayerGameStateView::new(
             self.players.iter().map(|p| p.public_state).collect(),
@@ -158,7 +157,7 @@ impl Game {
             this_player_state.hand.clone(),
             self.players
                 .iter()
-                .map(|p| p.connected.as_ref().map(|c| c.0.clone()))
+                .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
                 .collect(),
         )
     }
@@ -188,64 +187,70 @@ impl Game {
         })
     }
 
-    fn notify_update(&self) {
-        for (i, player) in self.players.iter().enumerate() {
+    pub async fn notify_update(&self) {
+        let futures = self.players.iter().enumerate().map(|(i, player)| {
             player.send_message(ServerMessage::SetState(self.get_state_for_player(i)))
-        }
+        });
+        join_all(futures).await;
     }
 
     fn mov(&mut self, player_i: usize, push: bool, direction: Option<Direction>) -> bool {
         let player = self.players.get_mut(player_i).unwrap();
         let origin_pos = player.public_state.position;
-        let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
-            return false;
-        };
-        let direction = direction.unwrap_or(player.public_state.direction);
-        if origin_tile.walls.get(&direction) {
-            return false;
-        }
-        let target_pos = direction.apply(&origin_pos);
-        let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
-            // falling into void
-            player.public_state.position = target_pos;
-            return true;
-        };
-        if origin_tile.walls.get(&direction.rotated().rotated()) {
-            return false;
-        }
-        if target_tile.typ == TileType::Void {
-            player.public_state.position = target_pos;
-            return true;
-        }
-        // this separate extraction into a Vec is necessary to satisfy borrow rules
-        let players_in_way: Vec<_> = self
-            .players
-            .iter()
-            .enumerate()
-            .filter(|(i, player2)| *i != player_i && player2.public_state.position == target_pos)
-            .map(|(i, _)| i)
-            .collect();
-        let prevent_move = (players_in_way.len() > 0 && !push)
-            || players_in_way
+        let target_pos;
+        // fall through or break 'checks => can move
+        'checks: {
+            let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
+                return false;
+            };
+            let direction = direction.unwrap_or(player.public_state.direction);
+            if origin_tile.walls.get(&direction) {
+                return false;
+            }
+            target_pos = direction.apply(&origin_pos);
+            let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
+                // falling into void
+                break 'checks;
+            };
+            if origin_tile.walls.get(&direction.rotated().rotated()) {
+                return false;
+            }
+            if target_tile.typ == TileType::Void {
+                break 'checks;
+            }
+            // this separate extraction into a Vec is necessary to satisfy borrow rules
+            let players_in_way: Vec<_> = self
+                .players
                 .iter()
-                .any(|i| !self.mov(*i, true, Some(direction)));
-
-        if !prevent_move {
-            self.players
-                .get_mut(player_i)
-                .unwrap()
-                .public_state
-                .position = target_pos;
-            true
-        } else {
-            false
+                .enumerate()
+                .filter(|(i, player2)| {
+                    *i != player_i && player2.public_state.position == target_pos
+                })
+                .map(|(i, _)| i)
+                .collect();
+            if (players_in_way.len() > 0 && !push)
+                || players_in_way
+                    .iter()
+                    .any(|i| !self.mov(*i, true, Some(direction)))
+            {
+                return false;
+            }
         }
+        self.players
+            .get_mut(player_i)
+            .unwrap()
+            .public_state
+            .position = target_pos;
+        true
     }
 
     fn execute_card(&mut self, player_i: usize, register_i: usize) {
         use Card::*;
         let player = self.players.get_mut(player_i).unwrap();
-        let GamePhase::Moving{ cards, ..} = &mut self.phase  else {panic!("Invalid state")};
+        let GamePhase::Moving { cards, .. } = &mut self.phase
+        else {
+            panic!("Invalid state")
+        };
         let card = cards
             .get_mut(player_i)
             .unwrap()
@@ -299,72 +304,20 @@ impl Game {
             Again => self.execute_card(player_i, register_i - 1),
         }
     }
-}
-
-pub struct RequestConnect {
-    pub name: String,
-    pub seat: usize,
-    pub weak_addr: WeakAddr<GameConnection>,
-}
-impl Message for RequestConnect {
-    type Result = ();
-}
-
-impl Handler<RequestConnect> for Game {
-    type Result = ();
-
-    fn handle(
-        &mut self,
-        RequestConnect {
-            name,
-            seat,
-            weak_addr,
-        }: RequestConnect,
-        _ctx: &mut Self::Context,
-    ) -> Self::Result {
-        let Some(addr) = weak_addr.upgrade() else {return};
-        let Some(player) = self.players.get_mut(seat) else {
-            addr.do_send(CloseConnection("There aren't that many seats".to_string()));
-            return
-        };
-        if let Some((name, conn)) = player.connected.as_ref() {
-            if conn.upgrade().is_some() {
-                addr.do_send(CloseConnection(format!(
-                    "Player '{}' is already connected to this seat",
-                    name
-                )));
-                return;
-            }
-        }
-        player.connected = Some((name, weak_addr));
-        addr.do_send(ServerActorMessage(ServerMessage::InitInfo {
-            map: self.map.clone(),
-            state: self.get_state_for_player(seat),
-        }));
-        self.notify_update();
-    }
-}
-
-pub struct Program(pub usize, pub [Card; 5]);
-impl Message for Program {
-    type Result = ();
-}
-impl Handler<Program> for Game {
-    type Result = ();
-    fn handle(&mut self, Program(seat, cards): Program, ctx: &mut Self::Context) {
+    pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
         let GamePhase::Programming(vec) = &mut self.phase else {
-            player.send_message(
-                ServerMessage::Notice("Programming phase isn't active right now".to_string()),
-            );
-            return;
+            return Err("Programming phase isn't active right now".to_string());
         };
         if *cards.first().unwrap() == Card::Again {
-            player.send_message(ServerMessage::Notice(
-                "Can't program Again in first slot".to_string(),
-            ));
-            return;
+            return Err("Can't program Again in first slot".to_string());
         }
+        let my_programmed_ref = match vec.get_mut(seat).unwrap() {
+            Some(_) => {
+                return Err("You have already programmed your cards for this round".to_string());
+            }
+            x @ None => x,
+        };
         let mut used_hand_indexes = HashSet::new();
         'outer: for picked_card in cards {
             for (i, hand_card) in player.hand.iter().enumerate() {
@@ -374,80 +327,20 @@ impl Handler<Program> for Game {
                 }
             }
             // did not find this card (unused) in hand
-            player.send_message(ServerMessage::Notice(format!(
+            return Err(format!(
                 "No cheating! {:?} isn't in your hand (enough times)",
                 picked_card
-            )));
-            return;
+            ));
         }
-
-        match vec.get_mut(seat).unwrap() {
-            Some(_) => {
-                player.send_message(ServerMessage::Notice(
-                    "You have already programmed your cards for this round".to_string(),
-                ));
-                return;
-            }
-            x @ None => *x = Some(cards),
-        }
-
+        *my_programmed_ref = Some(cards);
+        
         let mut i = 0;
         player.hand.retain(move |_| {
             let res = !used_hand_indexes.contains(&i);
             i += 1;
             res
         });
-
-        if vec.iter().all(Option::is_some) {
-            self.phase = GamePhase::Moving {
-                cards: vec.iter().map(|opt| opt.unwrap()).collect(),
-                register: 0,
-                register_phase_done: RegisterMovePhase::Started,
-            };
-            ctx.notify_later(Move, Duration::from_secs(1));
-        }
-        self.notify_update()
-    }
-}
-
-pub struct RequestNameSeats;
-impl Message for RequestNameSeats {
-    type Result = (String, Vec<Option<String>>);
-}
-impl Handler<RequestNameSeats> for Game {
-    type Result = Response<(String, Vec<Option<String>>)>;
-
-    fn handle(&mut self, _msg: RequestNameSeats, _ctx: &mut Self::Context) -> Self::Result {
-        Response::reply((
-            self.name.clone(),
-            self.players
-                .iter()
-                .map(|p| {
-                    p.connected.as_ref().and_then(|(name, conn)| {
-                        if conn.upgrade().is_some() {
-                            Some(name.clone())
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect(),
-        ))
-    }
-}
-
-pub struct Disconnect(pub usize);
-impl Message for Disconnect {
-    type Result = ();
-}
-impl Handler<Disconnect> for Game {
-    type Result = ();
-
-    fn handle(&mut self, Disconnect(seat): Disconnect, _ctx: &mut Self::Context) -> Self::Result {
-        if let Some(p) = self.players.get_mut(seat) {
-            p.connected = None;
-        };
-        self.notify_update();
+        Ok(())
     }
 }
 
@@ -492,44 +385,57 @@ impl Ord for AntennaDist {
     }
 }
 
-struct Move;
-impl Message for Move {
-    type Result = ();
-}
-impl Handler<Move> for Game {
-    type Result = ();
+pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>) {
+    use RegisterMovePhase::*;
 
-    fn handle(&mut self, _msg: Move, ctx: &mut Self::Context) -> Self::Result {
-        use RegisterMovePhase::*;
-        let GamePhase::Moving { register, register_phase_done, cards } = &mut self.phase else {panic!("Invalid state")};
-        let mut player_i_sorted_by_priority: Vec<_> = (0..self.players.len()).collect();
+    let sleep_after_move = || sleep(Duration::from_secs(3));
+
+    game_arc.write().await.phase = GamePhase::Moving {
+        cards,
+        register: 0,
+        register_phase: RegisterMovePhase::PlayerCards,
+    };
+    loop {
+        let game = game_arc.read().await;
+        let (cards, register, register_phase) = match &game.phase {
+            GamePhase::Moving {
+                cards,
+                register,
+                register_phase,
+            } => (cards.clone(), *register, *register_phase),
+            _ => panic!("Invalid state"),
+        };
+        let mut player_i_sorted_by_priority: Vec<usize> = (0..game.players.len()).collect();
         player_i_sorted_by_priority.sort_by_key(|i| AntennaDist {
-            me: unsafe { self.players.get_unchecked(*i) }
+            me: unsafe { game.players.get_unchecked(*i) }
                 .public_state
                 .position,
-            antenna: self.map.antenna,
+            antenna: game.map.antenna,
         });
-        match register_phase_done {
-            Started => {
-                *register_phase_done = PlayerMove;
-                let register_val = *register;
+        drop(game);
+        let next_register_phase = match register_phase {
+            PlayerCards => {
                 for player_i in player_i_sorted_by_priority {
-                    self.execute_card(player_i, register_val);
+                    game_arc.write().await.execute_card(player_i, register);
+                    game_arc.read().await.notify_update().await;
+                    sleep_after_move().await;
                 }
+                FastBelts
             }
-            PlayerMove => {
-                *register_phase_done = FastBelts;
+            FastBelts => {
                 for player_i in player_i_sorted_by_priority {
                     for _ in 0..2 {
-                        let pos = self.players.get(player_i).unwrap().public_state.position;
+                        let mut game = game_arc.write().await;
+                        let pos = game.players.get(player_i).unwrap().public_state.position;
                         if let TileType::Belt(true, dir, end) =
-                            self.map.tiles.get(pos.x, pos.y).unwrap().typ
+                            game.map.tiles.get(pos.x, pos.y).unwrap().typ
                         {
-                            if self.mov(player_i, false, Some(dir)) {
+                            let moved = game.mov(player_i, false, Some(dir));
+                            if moved {
                                 match end {
                                     BeltEnd::Straight => {}
                                     BeltEnd::TurnLeft => {
-                                        let player_public_state = &mut self
+                                        let player_public_state = &mut game
                                             .players
                                             .get_mut(player_i)
                                             .unwrap()
@@ -541,7 +447,7 @@ impl Handler<Move> for Game {
                                             .rotated()
                                     }
                                     BeltEnd::TurnRight => {
-                                        let player_public_state = &mut self
+                                        let player_public_state = &mut game
                                             .players
                                             .get_mut(player_i)
                                             .unwrap()
@@ -550,59 +456,72 @@ impl Handler<Move> for Game {
                                             player_public_state.direction.rotated()
                                     }
                                 }
-                                continue;
                             }
+                            drop(game);
+                            game_arc.read().await.notify_update().await;
+                            sleep_after_move().await;
                         }
-                        break;
                     }
                 }
+                SlowBelts
             }
-            FastBelts => {
-                *register_phase_done = SlowBelts;
+            SlowBelts => {
                 for player_i in player_i_sorted_by_priority {
-                    let pos = self.players.get(player_i).unwrap().public_state.position;
+                    let mut game = game_arc.write().await;
+                    let pos = game.players.get(player_i).unwrap().public_state.position;
                     if let TileType::Belt(false, dir, end) =
-                        self.map.tiles.get(pos.x, pos.y).unwrap().typ
+                        game.map.tiles.get(pos.x, pos.y).unwrap().typ
                     {
-                        if self.mov(player_i, false, Some(dir)) {
+                        let moved = game.mov(player_i, false, Some(dir));
+                        if moved {
                             match end {
                                 BeltEnd::Straight => {}
                                 BeltEnd::TurnLeft => {
                                     let player_public_state =
-                                        &mut self.players.get_mut(player_i).unwrap().public_state;
+                                        &mut game.players.get_mut(player_i).unwrap().public_state;
                                     player_public_state.direction =
                                         player_public_state.direction.rotated().rotated().rotated()
                                 }
                                 BeltEnd::TurnRight => {
                                     let player_public_state =
-                                        &mut self.players.get_mut(player_i).unwrap().public_state;
+                                        &mut game.players.get_mut(player_i).unwrap().public_state;
                                     player_public_state.direction =
                                         player_public_state.direction.rotated()
                                 }
                             }
                         }
+                        drop(game);
+                        game_arc.read().await.notify_update().await;
+                        sleep_after_move().await;
                     }
                 }
-            }
-            SlowBelts => {
-                *register_phase_done = PushPanels;
-                let register_val = *register;
-                for player_i in player_i_sorted_by_priority {
-                    let pos = self.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::PushPanel(dir, active) =
-                        self.map.tiles.get(pos.x, pos.y).unwrap().typ
-                    {
-                        if *active.get(register_val).unwrap() {
-                            self.mov(player_i, true, Some(dir));
-                        }
-                    }
-                }
+                PushPanels
             }
             PushPanels => {
-                *register_phase_done = Rotations;
-                for player in self.players.iter_mut() {
+                for player_i in player_i_sorted_by_priority {
+                    let mut game = game_arc.write().await;
+                    let pos = game.players.get(player_i).unwrap().public_state.position;
+                    if let TileType::PushPanel(dir, active) =
+                        game.map.tiles.get(pos.x, pos.y).unwrap().typ
+                    {
+                        if *active.get(register).unwrap() {
+                            game.mov(player_i, true, Some(dir));
+                        }
+                    }
+                    drop(game);
+                    game_arc.read().await.notify_update().await;
+                    sleep_after_move().await;
+                }
+                Rotations
+            }
+            Rotations => {
+                let mut guard = game_arc.write().await;
+                // explicitely separating guard to satisfy borrow rules - can't borrow from guard twice
+                // at once (deref), but can deref once and then borrow different fields
+                let game: &mut Game = guard.deref_mut();
+                for player in game.players.iter_mut() {
                     let pos = player.public_state.position;
-                    if let TileType::Rotation(is_cw) = self.map.tiles.get(pos.x, pos.y).unwrap().typ
+                    if let TileType::Rotation(is_cw) = game.map.tiles.get(pos.x, pos.y).unwrap().typ
                     {
                         let dir = &mut player.public_state.direction;
                         *dir = if is_cw {
@@ -612,46 +531,80 @@ impl Handler<Move> for Game {
                         };
                     }
                 }
+                drop(guard);
+                game_arc.read().await.notify_update().await;
+                sleep_after_move().await;
+                Lasers
             }
-            Rotations => {
-                *register_phase_done = RobotLasers;
+            Lasers => {
                 // todo lasers
+                RobotLasers
             }
-            Lasers => todo!("robot lasers"),
             RobotLasers => {
-                *register_phase_done = Checkpoints;
-                for player in self.players.iter_mut() {
-                    if *self
+                //todo robot lasers
+                Checkpoints
+            }
+            Checkpoints => {
+                let mut guard = game_arc.write().await;
+                let game: &mut Game = guard.deref_mut();
+                let mut winner = None;
+                for (player_i, player) in game.players.iter_mut().enumerate() {
+                    if *game
                         .map
                         .checkpoints
                         .get(player.public_state.checkpoint as usize)
                         .unwrap()
                         == player.public_state.position
                     {
-                        player.public_state.checkpoint += 1
+                        player.public_state.checkpoint += 1;
+                        if winner.is_none()
+                            && player.public_state.checkpoint == game.map.checkpoints.len()
+                        {
+                            winner = Some(player_i)
+                        }
                     }
                 }
-            }
-            Checkpoints => {
-                if *register == 4 {
-                    for (player, player_programmed) in self.players.iter_mut().zip(cards) {
-                        player.discard_pile.extend(*player_programmed);
+                drop(guard);
+                game_arc.read().await.notify_update().await;
+                sleep_after_move().await;
+
+                let mut game = game_arc.write().await;
+                if let Some(player_i) = winner {
+                    game.phase = GamePhase::HasWinner(player_i);
+                    drop(game);
+                    game_arc.read().await.notify_update().await;
+                    sleep(Duration::from_secs(60)).await;
+                    return;
+                }
+
+                let mut game = game_arc.write().await;
+                if register < 4 {
+                    if let GamePhase::Moving { register, .. } = &mut game.phase {
+                        *register += 1;
+                    } else {
+                        panic!("Invalid state");
+                    }
+                    PlayerCards
+                } else {
+                    for (player, player_programmed) in game.players.iter_mut().zip(cards.iter()) {
+                        player.discard_pile.extend(player_programmed);
                         player
                             .discard_pile
                             .extend(mem::replace(&mut player.hand, Vec::new()));
                         player.hand = player.draw_n(9);
                     }
-                    self.phase =
-                        GamePhase::Programming(repeat(None).take(self.players.len()).collect());
-                    self.notify_update();
-                    return; // to prevent scheduling move again
-                } else {
-                    *register += 1;
-                    *register_phase_done = Started;
+                    game.phase =
+                        GamePhase::Programming(repeat(None).take(game.players.len()).collect());
+                    drop(game);
+                    game_arc.read().await.notify_update().await;
+                    return;
                 }
             }
+        };
+        let mut game = game_arc.write().await;
+        match &mut game.phase {
+            GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
+            _ => panic!("Invalid state"),
         }
-        self.notify_update();
-        ctx.notify_later(Move, Duration::from_secs(1));
     }
 }

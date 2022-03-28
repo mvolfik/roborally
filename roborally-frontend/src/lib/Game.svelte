@@ -47,10 +47,7 @@
       "message",
       (e) => {
         try {
-          map = MessageProcessor.expect_init_message(
-            new Uint8Array(e.data),
-            stateStore.set
-          );
+          map = MessageProcessor.expect_init_message(new Uint8Array(e.data));
           connection.addEventListener("message", mainHandler);
         } catch (e) {
           alert(e);
@@ -78,7 +75,7 @@
 </script>
 
 <div class="outer">
-  {#if map === undefined}
+  {#if map === undefined || $stateStore === undefined}
     <p>Loading...</p>
   {:else}
     <div class="map">
@@ -98,7 +95,7 @@
     <div class="player-infoboxes">
       {#each Array($stateStore.players) as _, player_i}
         {@const player = $stateStore.get_player(player_i)}
-        {@const name = $stateStore.get_player(player_i).name}
+        {@const name = player.name}
         {#if $stateStore.phase !== GamePhase.Moving}
           <div style:--player-i={player_i} transition:fly={{ x: 100 }}>
             {#if player_i === seat}

@@ -6,7 +6,7 @@
   } from "frontend-wasm/roborally_frontend_wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-  import type { get, Writable } from "svelte/store";
+  import type { Writable } from "svelte/store";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
@@ -45,7 +45,7 @@
               hovered = { x, y };
             }}
           >
-            {#each map.get(x, y)?.to_jsarray() ?? [] as asset}
+            {#each map.get(x, y).to_jsarray() as asset}
               {@const assetUri = getTexture(asset.uri)}
               {#if assetUri !== undefined}
                 <img

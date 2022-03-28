@@ -12,6 +12,7 @@
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 
+pub mod card;
 pub mod game_map;
 pub mod game_state;
 pub mod position;
@@ -19,7 +20,6 @@ pub mod tile;
 pub mod tile_type;
 pub mod transform;
 pub mod transport;
-pub mod card;
 
 use game_state::PlayerPublicState;
 use serde::{Deserialize, Serialize};

@@ -26,21 +26,8 @@ fn format_parse_error(name: &str, message: &str, value: &str) -> ParseError {
     ParseError(format!("Error parsing {}: {}: `{}`", name, message, value))
 }
 
+#[derive(Debug)]
 pub struct ParseError(String);
-
-impl AsRef<str> for ParseError {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl ParseError {
-    #[inline]
-    /// Gets the inner string, moving the value
-    pub const fn get(self) -> String {
-        self.0
-    }
-}
 
 pub trait Parse: Sized {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError>;

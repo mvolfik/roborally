@@ -46,7 +46,7 @@
       body: new URLSearchParams({ players, map_name, name }),
     });
     let text = await r.text();
-    if (r.status === 200) {
+    if (r.status === 201) {
       alert(`Success. Game id: ${text}`);
     } else {
       alert(`Error: ${text}`);

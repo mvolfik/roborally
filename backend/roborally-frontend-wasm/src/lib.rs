@@ -65,18 +65,12 @@ pub struct MessageProcessor;
 
 #[wasm_bindgen]
 impl MessageProcessor {
-    pub fn expect_init_message(
-        bytes: &[u8],
-        set_state: SetStateFunction,
-    ) -> Result<AssetMap, JsValue> {
+    pub fn expect_init_message(bytes: &[u8]) -> Result<AssetMap, JsValue> {
         match rmp_serde::from_slice::<ServerMessage>(bytes)
             .map_err::<JsValue, _>(|e| e.to_string().into())?
         {
             ServerMessage::Notice(msg) => Err(msg.into()),
-            ServerMessage::InitInfo { map, state } => {
-                set_state.call(state)?;
-                Ok(map.into())
-            }
+            ServerMessage::InitInfo(map) => Ok(map.into()),
             _ => Err("Unexpected error when initializing connection".into()),
         }
     }
