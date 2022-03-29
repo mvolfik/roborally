@@ -3,6 +3,7 @@ use std::{
     iter::repeat,
     mem,
     sync::{Arc, Weak},
+    time::Duration,
 };
 
 use futures::{
@@ -22,6 +23,7 @@ use roborally_structs::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::RwLock,
+    time::sleep,
 };
 
 use crate::game_connection::PlayerConnection;
@@ -470,7 +472,6 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
         }
     }
     loop {
-        notify_sleep(&mut game_arc).await;
         let register;
         let register_phase;
         let player_i_sorted_by_priority;
@@ -505,6 +506,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
         debug!("Executing phase {}.{:?}", register, register_phase);
         let next_register_phase = match register_phase {
             PlayerCards => {
+                notify_sleep(&mut game_arc).await;
                 for player_i in player_i_sorted_by_priority {
                     execute_card(Arc::clone(&game_arc), player_i, register).await;
                 }
@@ -684,8 +686,8 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     )
                             );
                             game.phase = GamePhase::HasWinner(player_i);
+                            game.notify_update().await;
                             drop(game);
-                            notify_sleep(&mut game_arc).await;
                             return;
                         }
                     }
@@ -716,7 +718,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     }
                     game.phase =
                         GamePhase::Programming(repeat(None).take(game.players.len()).collect());
-                    game.notify_update();
+                    game.notify_update().await;
                     return;
                 }
             }
@@ -733,12 +735,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
 /// Asking for a mutable `game_arc` reference to help check that it isn't borrowed anywhere
 async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
     game_arc.read().await.notify_update().await;
-
-    eprintln!("Enter to continue");
-    BufReader::new(tokio::io::stdin())
-        .read_line(&mut String::new())
-        .await
-        .unwrap();
+    sleep(Duration::from_secs(1)).await;
 }
 
 async fn after_move(game_arc: &mut Arc<RwLock<Game>>, _moved_players: &[usize]) {
