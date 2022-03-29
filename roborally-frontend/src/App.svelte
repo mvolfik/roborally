@@ -52,10 +52,11 @@
     let text = await r.text();
     if (r.status === 201) {
       alert(`Success. Game id: ${text}`);
+      games_promise = refresh_game_list();
+      state = { state: "disconnected" };
     } else {
       alert(`Error: ${text}`);
     }
-    games_promise = refresh_game_list();
   }
 
   let previewedMap = undefined;
