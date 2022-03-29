@@ -1,8 +1,16 @@
 <script lang="ts">
   import Game from "./lib/Game.svelte";
+  import Map from "./lib/Map.svelte";
+  import { fetchMap } from "./lib/utils";
 
   let state:
     | { state: "disconnected" }
+    | {
+        state: "creatingGame";
+        chosenMap: string | undefined;
+        players_n: number;
+        name: string;
+      }
     | {
         state: "choosingSeat";
         game_id: string;
@@ -26,24 +34,20 @@
     return await r.json();
   }
 
-  async function create_new_game() {
-    const name = prompt("Name of your game:");
-    let players: number;
-    while (true) {
-      players = parseInt(prompt("Number of players:"));
-      if (Number.isNaN(players)) {
-        alert("Need a number");
-      } else if (players <= 0) {
-        alert("Number must be greater than 0");
-      } else {
-        break;
-      }
-    }
-    const map_name = prompt("Map name:");
+  async function fetchMaps(): Promise<string[]> {
+    const r = await fetch("/api/list-maps");
+    return await r.json();
+  }
+
+  async function handleCreateGame() {
     const r = await fetch("/api/new-game", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ players, map_name, name }),
+      body: new URLSearchParams({
+        players: state.players_n,
+        map_name: state.chosenMap,
+        name: state.name,
+      }),
     });
     let text = await r.text();
     if (r.status === 201) {
@@ -53,6 +57,8 @@
     }
     games_promise = refresh_game_list();
   }
+
+  let previewedMap = undefined;
 </script>
 
 {#if state.state === "inGame"}
@@ -71,7 +77,17 @@
       >Refresh list of games</button
     >
   </p>
-  <p><button on:click={create_new_game}>Create new game</button></p>
+  <p>
+    <button
+      on:click={() =>
+        (state = {
+          state: "creatingGame",
+          chosenMap: undefined,
+          name: "",
+          players_n: 3,
+        })}>Create new game</button
+    >
+  </p>
   <table>
     <thead>
       <tr>
@@ -126,7 +142,7 @@
     class="backdrop"
     on:click|self={() => (state = { state: "disconnected" })}
   >
-    <div class="seatChooser">
+    <div class="dialog">
       <label>
         Select game seat:
         <select bind:value={state.chosenSeat}>
@@ -159,6 +175,63 @@
   </div>
 {/if}
 
+{#if state.state === "creatingGame"}
+  <div
+    class="backdrop"
+    on:click|self={() => (state = { state: "disconnected" })}
+  >
+    <div class="dialog">
+      <label>
+        Game name: <input type="text" bind:value={state.name} />
+      </label>
+      <label>
+        Number of players: <input
+          type="number"
+          min="1"
+          max="6"
+          step="1"
+          bind:value={state.players_n}
+        />
+      </label>
+      {#await fetchMaps()}
+        <span>Please wait, loading available maps</span>
+      {:then maps}
+        <label>
+          Select map:
+          <select bind:value={state.chosenMap}>
+            <option disabled value={undefined}>&lt;choose&gt;</option>
+            {#each maps as map}
+              <option value={map}>{map}</option>
+            {/each}
+          </select>
+        </label>
+        <button
+          disabled={state.chosenMap === undefined}
+          on:click={() => (previewedMap = state.chosenMap)}>Preview map</button
+        >
+      {/await}
+      <button
+        disabled={state.chosenMap === undefined || state.name.length === 0}
+        on:click={handleCreateGame}>Create</button
+      >
+    </div>
+  </div>
+{/if}
+
+{#if previewedMap !== undefined}
+  <div class="backdrop" on:click|self={() => (previewedMap = undefined)}>
+    <div class="dialog">
+      {#await fetchMap(previewedMap)}
+        <span>Please wait, loading map preview</span>
+      {:then map}
+        <div class="map-preview">
+          <Map {map} />
+        </div>
+      {/await}
+    </div>
+  </div>
+{/if}
+
 <style>
   table {
     width: 100%;
@@ -183,7 +256,7 @@
     top: 0;
   }
 
-  .seatChooser {
+  .dialog {
     display: grid;
     position: absolute;
     left: 50%;
@@ -192,5 +265,10 @@
     background-color: #fff;
     padding: 2rem;
     grid-gap: 0.5rem;
+  }
+
+  .map-preview {
+    width: 70vw;
+    height: 70vh;
   }
 </style>

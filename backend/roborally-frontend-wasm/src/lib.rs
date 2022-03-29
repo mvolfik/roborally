@@ -19,6 +19,7 @@ mod utils;
 use crate::asset::AssetMap;
 use roborally_structs::{
     card::wrapper::CardWrapper,
+    game_map::GameMap,
     game_state::PlayerGameStateView,
     transport::{ClientMessage, ServerMessage},
 };
@@ -109,4 +110,11 @@ impl MessageProcessor {
         ]))
         .unwrap()
     }
+}
+
+#[wasm_bindgen]
+pub fn parse_map(bytes: &[u8]) -> Result<AssetMap, JsValue> {
+    rmp_serde::from_slice::<GameMap>(bytes)
+        .map(|m| m.into())
+        .map_err(|e| e.to_string().into())
 }

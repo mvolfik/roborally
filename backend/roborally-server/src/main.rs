@@ -35,7 +35,7 @@ use tokio::sync::RwLock;
 use warp::{reply::with_status, Filter, Reply};
 
 async fn socket_connect_handler(game_id: u64, ws: warp::ws::Ws, games_lock: Games) -> impl Reply {
-    let game = games_lock.read().await.get(&game_id).cloned();
+    let game = games_lock.read().await.get(&game_id).map(|x| x.1.clone());
     ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
@@ -71,7 +71,7 @@ async fn new_game_handler(
                 id = random();
             }
         }
-        games.insert(id, Arc::new(RwLock::new(game)));
+        games.insert(id, (map_name, Arc::new(RwLock::new(game))));
     }
     with_status(id.to_string(), StatusCode::CREATED)
 }
@@ -80,6 +80,7 @@ async fn new_game_handler(
 struct GameListItem {
     id: String,
     seats: Vec<Option<String>>,
+    map_name: String,
     name: String,
 }
 
@@ -87,7 +88,7 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     let games = games_lock.read().await;
     let futures: Vec<_> = games
         .iter()
-        .map(async move |(id, game_lock)| {
+        .map(async move |(id, (map_name, game_lock))| {
             let game = game_lock.read().await;
             GameListItem {
                 id: id.to_string(),
@@ -96,6 +97,7 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
                     .iter()
                     .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
                     .collect(),
+                map_name: map_name.clone(),
                 name: game.name.clone(),
             }
         })
@@ -103,7 +105,7 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     warp::reply::json(&join_all(futures).await)
 }
 
-type Games = Arc<RwLock<HashMap<u64, Arc<RwLock<Game>>>>>;
+type Games = Arc<RwLock<HashMap<u64, (String, Arc<RwLock<Game>>)>>>;
 type Maps = Arc<HashMap<String, GameMap>>;
 
 macro_rules! load_maps {
@@ -120,6 +122,19 @@ macro_rules! load_maps {
                 )*
             ])
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct GetMapQuery {
+    name: String,
+}
+
+fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
+    if let Some(map) = maps.get(&query.name) {
+        Box::new(rmp_serde::to_vec(map).unwrap())
+    } else {
+        Box::new(with_status("Unknown map", StatusCode::NOT_FOUND))
     }
 }
 
@@ -144,6 +159,17 @@ async fn main() {
         .and(warp::get())
         .and(create_games_state())
         .then(list_games_handler);
+    let list_maps = api
+        .and(warp::path("list-maps").and(warp::path::end()))
+        .and(warp::get())
+        .and(create_maps_state())
+        .map(|maps: Maps| warp::reply::json(&maps.keys().collect::<Vec<_>>()));
+    let get_map = api
+        .and(warp::path("map").and(warp::path::end()))
+        .and(warp::get())
+        .and(warp::query::<GetMapQuery>())
+        .and(create_maps_state())
+        .map(handle_get_map);
     let new_game = api
         .and(warp::path("new-game").and(warp::path::end()))
         .and(warp::post())
@@ -159,7 +185,12 @@ async fn main() {
 
     let static_files = warp::fs::dir("../roborally-frontend/dist");
 
-    let routes = list_games.or(new_game).or(socket).or(static_files);
+    let routes = list_games
+        .or(list_maps)
+        .or(get_map)
+        .or(new_game)
+        .or(socket)
+        .or(static_files);
     let ip_port = match std::env::var("PORT")
         .ok()
         .map(|p| u16::from_str(&p).ok())

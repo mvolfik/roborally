@@ -6,12 +6,17 @@
   } from "frontend-wasm/roborally_frontend_wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-  import type { Writable } from "svelte/store";
+  import { readable, Readable, Writable } from "svelte/store";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
   export let hovered = undefined;
-  export let stateStore: Writable<PlayerGameStateView>;
+  export let stateStore: Readable<{
+    players: number;
+    get_player: (number) => PlayerPublicStateWrapper;
+  }> = readable({
+    players: 0,
+  });
 
   let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
   $: {
