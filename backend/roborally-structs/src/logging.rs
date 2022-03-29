@@ -23,14 +23,14 @@ fn format(record: &Record) -> String {
 
 #[cfg(feature = "client")]
 mod platform {
-    use log::{set_max_level, LevelFilter, Log, Metadata, Record};
+    use log::{set_max_level, LevelFilter, Log, Metadata, Record, SetLoggerError};
     use web_sys::console;
 
     pub struct Logger;
     static LOGGER: Logger = Logger;
 
     impl Log for Logger {
-        fn enabled(&self, metadata: &Metadata) -> bool {
+        fn enabled(&self, _metadata: &Metadata) -> bool {
             true
         }
 
@@ -51,14 +51,14 @@ mod platform {
         fn flush(&self) {}
     }
 
-    pub(super) fn init() {
-        log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Trace));
+    pub(super) fn init() -> Result<(), SetLoggerError> {
+        log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Trace))
     }
 }
 
 #[cfg(all(not(feature = "client"), feature = "server"))]
 mod platform {
-    use log::{set_max_level, LevelFilter, Log, Metadata, Record};
+    use log::{set_max_level, LevelFilter, Log, Metadata, Record, SetLoggerError};
     pub struct Logger;
     static LOGGER: Logger = Logger;
 
@@ -77,11 +77,17 @@ mod platform {
         fn flush(&self) {}
     }
 
-    pub(super) fn init() {
-        log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Debug));
+    pub(super) fn init() -> Result<(), SetLoggerError> {
+        log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Debug))
     }
 }
 
 pub fn init() {
-    platform::init();
+    if let Err(e) = platform::init() {
+        let msg = format!("Error setting up logging: {}", e);
+        #[cfg(feature = "server")]
+        eprintln!("{}", &msg);
+        #[cfg(feature = "client")]
+        web_sys::console::error_1(&msg.into());
+    }
 }

@@ -38,7 +38,7 @@ pub struct TileAssets(Vec<Asset>);
 
 #[wasm_bindgen]
 impl TileAssets {
-    pub fn to_jsarray(self) -> AssetArray {
+    pub fn into_jsarray(self) -> AssetArray {
         self.0.into()
     }
 }

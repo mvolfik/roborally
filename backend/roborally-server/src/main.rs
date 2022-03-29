@@ -1,6 +1,8 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::use_self)]
 #![warn(clippy::pedantic)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::module_name_repetitions)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
@@ -48,7 +50,7 @@ struct NewGameData {
 
 async fn new_game_handler(
     maps: Maps,
-    games: Games,
+    games_lock: Games,
     NewGameData {
         players,
         map_name,
@@ -65,7 +67,7 @@ async fn new_game_handler(
 
     let mut id = random();
     {
-        let mut games = games.write().await;
+        let mut games = games_lock.write().await;
         {
             while games.contains_key(&id) {
                 id = random();
@@ -130,36 +132,39 @@ struct GetMapQuery {
     name: String,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
-    if let Some(map) = maps.get(&query.name) {
-        Box::new(rmp_serde::to_vec(map).unwrap())
-    } else {
-        Box::new(with_status("Unknown map", StatusCode::NOT_FOUND))
-    }
+    maps.get(&query.name).map_or_else::<Box<dyn Reply>, _, _>(
+        || Box::new(with_status("Unknown map", StatusCode::NOT_FOUND)),
+        |map| Box::new(rmp_serde::to_vec(map).unwrap()),
+    )
 }
 
 #[tokio::main]
 async fn main() {
     logging::init();
-    let maps: Maps = Arc::new(load_maps!["test.csv"]);
-    // Shared game state. web::Data uses Arc internally, so we create state outside the server factory, and the factory clones the Arc for each thread
-
     let games: Games = Games::default();
+    let maps: Maps = Arc::new(load_maps!["test.csv"]);
+
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
-    let create_games_state = move || {
+    let create_games_state = || {
         let arc = games.clone();
         warp::any().map(move || arc.clone())
     };
+
     let create_maps_state = move || {
         let arc = maps.clone();
+
         warp::any().map(move || arc.clone())
     };
+
     let api = warp::path("api");
     let list_games = api
         .and(warp::path("list-games").and(warp::path::end()))
         .and(warp::get())
         .and(create_games_state())
         .then(list_games_handler);
+    #[allow(clippy::shadow_unrelated)]
     let list_maps = api
         .and(warp::path("list-maps").and(warp::path::end()))
         .and(warp::get())
@@ -194,13 +199,12 @@ async fn main() {
         .or(static_files);
     let ip_port = match std::env::var("PORT")
         .ok()
-        .map(|p| u16::from_str(&p).ok())
-        .flatten()
+        .and_then(|p| u16::from_str(&p).ok())
     {
         Some(p) => ([0, 0, 0, 0], p),
         None => ([127, 0, 0, 1], 8080),
     };
     let server = warp::serve(routes).run(ip_port);
     eprintln!("Running at {:?}", ip_port);
-    server.await
+    server.await;
 }

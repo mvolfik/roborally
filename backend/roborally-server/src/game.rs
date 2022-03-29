@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     iter::repeat,
     mem,
-    ops::DerefMut,
     sync::{Arc, Weak},
 };
 
@@ -23,7 +22,6 @@ use roborally_structs::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::RwLock,
-    time::{sleep, Instant},
 };
 
 use crate::game_connection::PlayerConnection;
@@ -81,7 +79,7 @@ impl Player {
         if let Some(c) = self.draw_pile.pop() {
             c
         } else {
-            self.draw_pile = mem::replace(&mut self.discard_pile, Vec::new());
+            self.draw_pile = mem::take(&mut self.discard_pile);
             self.draw_pile.shuffle(&mut thread_rng());
             self.draw_pile.pop().unwrap()
         }
@@ -92,10 +90,7 @@ impl Player {
             self.draw_pile.split_off(self.draw_pile.len() - n)
         } else {
             // Vec::new() -> discard_pile -> draw_pile -> out
-            let mut out = mem::replace(
-                &mut self.draw_pile,
-                mem::replace(&mut self.discard_pile, Vec::new()),
-            );
+            let mut out = mem::replace(&mut self.draw_pile, mem::take(&mut self.discard_pile));
             self.draw_pile.shuffle(&mut thread_rng());
             out.extend(
                 self.draw_pile
@@ -127,13 +122,13 @@ pub enum GamePhase {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct Game {
     pub map: GameMap,
     pub players: Vec<Player>,
     pub phase: GamePhase,
     pub name: String,
     pub damage_piles: DamagePiles,
-    _prevent_construct: (),
 }
 
 impl Game {
@@ -176,10 +171,7 @@ impl Game {
         }
         let mut spawn_points = map.spawn_points.clone();
         let (shuffled_spawn_points, _) = spawn_points.partial_shuffle(&mut thread_rng(), players_n);
-        let players: Vec<Player> = shuffled_spawn_points
-            .iter()
-            .map(|sp| Player::init(sp))
-            .collect();
+        let players: Vec<Player> = shuffled_spawn_points.iter().map(Player::init).collect();
         Ok(Self {
             map,
             players,
@@ -191,7 +183,6 @@ impl Game {
                 virus: 15,
                 trojan: 15,
             },
-            _prevent_construct: (),
         })
     }
 
@@ -204,12 +195,12 @@ impl Game {
 
     /// returns value:
     /// None => failed to move
-    /// Some(vec) => moved, vec contains player_i of each player that was moved (in case of pushing train)
+    /// Some(vec) => moved, vec contains `player_i` of each player that was moved (in case of pushing train)
     fn mov(
         &mut self,
         player_i: usize,
         push: bool,
-        direction: Option<Direction>,
+        dir_opt: Option<Direction>,
     ) -> Option<Vec<usize>> {
         debug!("Attempting to move player {}", player_i);
         let player = self.players.get(player_i).unwrap();
@@ -221,7 +212,7 @@ impl Game {
             let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
                 return None;
             };
-            let direction = direction.unwrap_or(player.public_state.direction);
+            let direction = dir_opt.unwrap_or(player.public_state.direction);
             if origin_tile.walls.get(&direction) {
                 debug!("There's a wall on source tile");
                 return None;
@@ -250,9 +241,10 @@ impl Game {
                 })
                 .map(|(i, _)| i)
                 .collect();
-            if players_in_way.len() > 1 {
-                panic!("Unexpected: more than 1 player on tile");
-            }
+            assert!(
+                players_in_way.len() <= 1,
+                "Unexpected: more than 1 player on tile"
+            );
             if let Some(player2_i) = players_in_way.first() {
                 debug!("There's a player in the way");
                 if !push {
@@ -322,7 +314,7 @@ struct AntennaDist {
 }
 
 impl AntennaDist {
-    fn dist(&self) -> usize {
+    const fn dist(&self) -> usize {
         usize::abs_diff(self.antenna.x, self.me.x) + usize::abs_diff(self.antenna.y, self.me.y)
     }
     fn sortable_bearing(&self) -> f64 {
@@ -331,7 +323,7 @@ impl AntennaDist {
             self.antenna.y as f64 - self.me.y as f64,
         );
         if x > 0.0 {
-            x -= std::f64::consts::TAU
+            x -= std::f64::consts::TAU;
         }
         -x
     }
@@ -364,7 +356,7 @@ fn execute_card(
     async move {
         use Card::*;
         let mut guard = game_arc.write().await;
-        let game = guard.deref_mut();
+        let game = &mut *guard;
         let GamePhase::Moving { cards, .. } = &mut game.phase
     else {
         panic!("Invalid state")
@@ -463,26 +455,34 @@ fn execute_card(
     .boxed()
 }
 
-pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>) {
+pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
     use RegisterMovePhase::*;
-    game_arc.write().await.phase = GamePhase::Moving {
-        cards,
-        register: 0,
-        register_phase: RegisterMovePhase::PlayerCards,
-    };
+    {
+        let mut guard = game_arc.write().await;
+        let game = &mut *guard;
+        if let GamePhase::Programming(cards) = &game.phase {
+            game.phase = GamePhase::Moving {
+                cards: cards.iter().map(|c| c.unwrap()).collect(),
+                register: 0,
+                register_phase: RegisterMovePhase::PlayerCards,
+            };
+        }
+    }
     loop {
-        let cards;
         let register;
         let register_phase;
         let player_i_sorted_by_priority;
         {
             let game = game_arc.read().await;
-            (cards, register, register_phase) = match &game.phase {
+            match &game.phase {
                 GamePhase::Moving {
-                    cards,
-                    register,
-                    register_phase,
-                } => (cards.clone(), *register, *register_phase),
+                    register: reg,
+                    register_phase: phase,
+                    ..
+                } => {
+                    register = *reg;
+                    register_phase = *phase;
+                }
                 _ => panic!("Invalid state"),
             };
             let mut active_players: Vec<usize> = game
@@ -530,7 +530,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                                             .direction
                                             .rotated()
                                             .rotated()
-                                            .rotated()
+                                            .rotated();
                                     }
                                     BeltEnd::TurnRight => {
                                         let player_public_state = &mut game
@@ -539,7 +539,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                                             .unwrap()
                                             .public_state;
                                         player_public_state.direction =
-                                            player_public_state.direction.rotated()
+                                            player_public_state.direction.rotated();
                                     }
                                 }
                             }
@@ -566,13 +566,13 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                                     let player_public_state =
                                         &mut game.players.get_mut(player_i).unwrap().public_state;
                                     player_public_state.direction =
-                                        player_public_state.direction.rotated().rotated().rotated()
+                                        player_public_state.direction.rotated().rotated().rotated();
                                 }
                                 BeltEnd::TurnRight => {
                                     let player_public_state =
                                         &mut game.players.get_mut(player_i).unwrap().public_state;
                                     player_public_state.direction =
-                                        player_public_state.direction.rotated()
+                                        player_public_state.direction.rotated();
                                 }
                             }
                         }
@@ -603,7 +603,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                 let mut guard = game_arc.write().await;
                 // explicitely separating guard to satisfy borrow rules - can't borrow from guard twice
                 // at once (deref), but can deref once and then borrow different fields
-                let game: &mut Game = guard.deref_mut();
+                let game: &mut Game = &mut *guard;
                 let mut any_rotated = false;
                 for player_i in player_i_sorted_by_priority {
                     let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
@@ -641,9 +641,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                 let mut winner = None;
 
                 let mut guard = game_arc.write().await;
-                let game: &mut Game = guard.deref_mut();
+                let game: &mut Game = &mut *guard;
                 for player_i in player_i_sorted_by_priority {
-                    let player = &mut game.players.get_mut(player_i).unwrap();
+                    let player = game.players.get_mut(player_i).unwrap();
                     if *game
                         .map
                         .checkpoints
@@ -655,7 +655,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                         if winner.is_none()
                             && player.public_state.checkpoint == game.map.checkpoints.len()
                         {
-                            winner = Some(player_i)
+                            winner = Some(player_i);
                         }
                     }
                 }
@@ -666,6 +666,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                 {
                     if let Some(player_i) = winner {
                         {
+                            #[allow(clippy::shadow_unrelated)]
                             let mut game = game_arc.write().await;
                             info!(
                                 "Game won by {}",
@@ -685,7 +686,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                 }
 
                 if register < 4 {
+                    #[allow(clippy::shadow_unrelated)]
                     let mut game = game_arc.write().await;
+                    #[allow(clippy::shadow_unrelated)]
                     if let GamePhase::Moving { register, .. } = &mut game.phase {
                         *register += 1;
                     } else {
@@ -693,12 +696,15 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
                     }
                     PlayerCards
                 } else {
+                    #[allow(clippy::shadow_unrelated)]
                     let mut game = game_arc.write().await;
+                    let cards = match &game.phase {
+                        GamePhase::Moving { cards, .. } => cards.clone(),
+                        _ => panic!("Invalid state"),
+                    };
                     for (player, player_programmed) in game.players.iter_mut().zip(cards.iter()) {
                         player.discard_pile.extend(player_programmed);
-                        player
-                            .discard_pile
-                            .extend(mem::replace(&mut player.hand, Vec::new()));
+                        player.discard_pile.extend(mem::take(&mut player.hand));
                         player.hand = player.draw_n(9);
                     }
                     game.phase =
@@ -711,6 +717,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
             }
         };
         let mut game = game_arc.write().await;
+        #[allow(clippy::shadow_unrelated)]
         match &mut game.phase {
             GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
             _ => panic!("Invalid state"),
@@ -718,7 +725,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card;
     }
 }
 
-/// Asking for a mutable game_arc reference to help check that it isn't borrowed anywhere
+/// Asking for a mutable `game_arc` reference to help check that it isn't borrowed anywhere
 async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
     game_arc.read().await.notify_update().await;
 
@@ -729,7 +736,7 @@ async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
         .unwrap();
 }
 
-async fn after_move(game_arc: &mut Arc<RwLock<Game>>, moved_players: &[usize]) {
+async fn after_move(game_arc: &mut Arc<RwLock<Game>>, _moved_players: &[usize]) {
     notify_sleep(game_arc).await;
     /*
     todo: reboot if out of bounds

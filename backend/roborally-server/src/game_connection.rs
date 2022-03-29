@@ -47,7 +47,7 @@ impl PlayerConnection {
             return;
         };
 
-        let (name, seat) = match reader.next().await {
+        let (player_name, seat) = match reader.next().await {
             None => {
                 error!("unexpected None");
                 return;
@@ -96,7 +96,7 @@ impl PlayerConnection {
             writer.send_message(ServerMessage::InitInfo(map)).await;
 
             let conn = Arc::new(Self {
-                name,
+                name: player_name,
                 game: game_lock.clone(),
                 seat,
                 socket: RwLock::new(writer),
@@ -132,7 +132,7 @@ impl PlayerConnection {
                             let game = self_arc.game.read().await;
                             game.notify_update().await;
                             if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
-                                tokio::spawn(run_moving_phase(game_lock.clone(), vec.iter().map(|opt| opt.unwrap()).collect()));
+                                tokio::spawn(run_moving_phase(game_lock.clone()));
                             }
                             Ok(())
                         }

@@ -1,6 +1,8 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::use_self)]
 #![warn(clippy::pedantic)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::module_name_repetitions)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
