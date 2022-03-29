@@ -1,4 +1,4 @@
-import { AssetMap, parse_map } from "../../frontend-wasm/";
+import { AssetMap, parse_map } from "frontend-wasm";
 
 const assets = import.meta.globEager("../assets/textures/*.png", {
   assert: { type: "url" },

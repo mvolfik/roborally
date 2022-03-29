@@ -11,15 +11,14 @@
 #![warn(clippy::shadow_unrelated)]
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
+#![feature(thread_id_value)]
 
 pub mod card;
 pub mod game_map;
 pub mod game_state;
+pub mod logging;
 pub mod position;
 pub mod tile;
 pub mod tile_type;
 pub mod transform;
 pub mod transport;
-
-use game_state::PlayerPublicState;
-use serde::{Deserialize, Serialize};

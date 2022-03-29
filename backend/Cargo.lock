@@ -687,7 +687,6 @@ dependencies = [
  "rmp-serde",
  "roborally-structs",
  "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -696,7 +695,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "http",
- "log",
  "rand",
  "rmp-serde",
  "roborally-structs",
@@ -709,8 +707,10 @@ dependencies = [
 name = "roborally-structs"
 version = "0.1.0"
 dependencies = [
+ "log",
  "serde",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

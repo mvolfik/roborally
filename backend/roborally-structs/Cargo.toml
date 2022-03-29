@@ -5,9 +5,11 @@ name = "roborally-structs"
 version = "0.1.0"
 
 [features]
-client = ["wasm-bindgen"]
+client = ["wasm-bindgen", "web-sys"]
 server = []
 
 [dependencies]
+log = "^0.4.16"
 serde = {version = "^1.0.136", features = ["derive"]}
 wasm-bindgen = {version = "^0.2.79", optional = true}
+web-sys = {version = "^0.3.56", features = ["console"], optional = true}

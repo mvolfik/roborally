@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use log::{error, info, warn};
-use roborally_structs::transport::{ClientMessage, ServerMessage};
+use roborally_structs::{
+    logging::{error, info, warn},
+    transport::{ClientMessage, ServerMessage},
+};
 use tokio::sync::RwLock;
 use warp::ws::{Message, WebSocket};
 

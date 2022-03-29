@@ -4,20 +4,27 @@ use std::{
     mem,
     ops::DerefMut,
     sync::{Arc, Weak},
-    time::Duration,
 };
 
-use futures::future::join_all;
+use futures::{
+    future::{join_all, BoxFuture},
+    FutureExt,
+};
 use rand::{prelude::SliceRandom, thread_rng};
 use roborally_structs::{
     card::Card,
     game_map::GameMap,
     game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState, RegisterMovePhase},
+    logging::{debug, info},
     position::{Direction, Position},
     tile_type::{BeltEnd, TileType},
     transport::ServerMessage,
 };
-use tokio::{sync::RwLock, time::sleep};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    sync::RwLock,
+    time::{sleep, Instant},
+};
 
 use crate::game_connection::PlayerConnection;
 
@@ -142,6 +149,7 @@ impl Game {
                     .iter()
                     .map(|card_array| *card_array.get(*register).unwrap())
                     .collect(),
+                my_registers: *cards.get(seat).unwrap(),
                 register: *register,
                 register_phase: *register_phase,
             },
@@ -194,28 +202,42 @@ impl Game {
         join_all(futures).await;
     }
 
-    fn mov(&mut self, player_i: usize, push: bool, direction: Option<Direction>) -> bool {
-        let player = self.players.get_mut(player_i).unwrap();
+    /// returns value:
+    /// None => failed to move
+    /// Some(vec) => moved, vec contains player_i of each player that was moved (in case of pushing train)
+    fn mov(
+        &mut self,
+        player_i: usize,
+        push: bool,
+        direction: Option<Direction>,
+    ) -> Option<Vec<usize>> {
+        debug!("Attempting to move player {}", player_i);
+        let player = self.players.get(player_i).unwrap();
         let origin_pos = player.public_state.position;
         let target_pos;
+        let mut pushed_if_success = vec![player_i];
         // fall through or break 'checks => can move
         'checks: {
             let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
-                return false;
+                return None;
             };
             let direction = direction.unwrap_or(player.public_state.direction);
             if origin_tile.walls.get(&direction) {
-                return false;
+                debug!("There's a wall on source tile");
+                return None;
             }
             target_pos = direction.apply(&origin_pos);
             let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
+                debug!("Falling out from map");
                 // falling into void
                 break 'checks;
             };
             if origin_tile.walls.get(&direction.rotated().rotated()) {
-                return false;
+                debug!("There's a wall on target tile");
+                return None;
             }
             if target_tile.typ == TileType::Void {
+                debug!("Falling into a void");
                 break 'checks;
             }
             // this separate extraction into a Vec is necessary to satisfy borrow rules
@@ -228,82 +250,31 @@ impl Game {
                 })
                 .map(|(i, _)| i)
                 .collect();
-            if (players_in_way.len() > 0 && !push)
-                || players_in_way
-                    .iter()
-                    .any(|i| !self.mov(*i, true, Some(direction)))
-            {
-                return false;
+            if players_in_way.len() > 1 {
+                panic!("Unexpected: more than 1 player on tile");
+            }
+            if let Some(player2_i) = players_in_way.first() {
+                debug!("There's a player in the way");
+                if !push {
+                    debug!("Can't push, aborting");
+                    return None;
+                }
+                match self.mov(*player2_i, true, Some(direction)) {
+                    None => return None,
+                    Some(pushed) => pushed_if_success.extend(pushed),
+                }
+                debug!("Pushed 'em");
             }
         }
+        debug!("Moving");
         self.players
             .get_mut(player_i)
             .unwrap()
             .public_state
             .position = target_pos;
-        true
+        Some(pushed_if_success)
     }
 
-    fn execute_card(&mut self, player_i: usize, register_i: usize) {
-        use Card::*;
-        let player = self.players.get_mut(player_i).unwrap();
-        let GamePhase::Moving { cards, .. } = &mut self.phase
-        else {
-            panic!("Invalid state")
-        };
-        let card = cards
-            .get_mut(player_i)
-            .unwrap()
-            .get_mut(register_i)
-            .unwrap();
-        match card {
-            SPAM => {
-                self.damage_piles.spam += 1;
-                *card = player.draw_one();
-                self.execute_card(player_i, register_i);
-            }
-            Worm => {
-                self.damage_piles.worm += 1;
-                *card = player.draw_one();
-                // move out of bounds = reboot
-                player.public_state.position.x = usize::MAX;
-            }
-            Virus => todo!(),
-            Trojan => {
-                self.damage_piles.trojan += 1;
-                player.draw_spam(&mut self.damage_piles);
-                player.draw_spam(&mut self.damage_piles);
-                *card = player.draw_one();
-                self.execute_card(player_i, register_i);
-            }
-            Move1 => {
-                self.mov(player_i, true, None);
-            }
-            Move2 => {
-                let _ = self.mov(player_i, true, None) && self.mov(player_i, true, None);
-            }
-            Move3 => {
-                let _ = self.mov(player_i, true, None)
-                    && self.mov(player_i, true, None)
-                    && self.mov(player_i, true, None);
-            }
-            Reverse1 => {
-                let dir = player.public_state.direction.rotated().rotated();
-                self.mov(player_i, true, Some(dir));
-            }
-            TurnRight => {
-                player.public_state.direction = player.public_state.direction.rotated();
-            }
-            TurnLeft => {
-                player.public_state.direction =
-                    player.public_state.direction.rotated().rotated().rotated();
-            }
-            UTurn => {
-                player.public_state.direction = player.public_state.direction.rotated().rotated();
-            }
-            Again => self.execute_card(player_i, register_i - 1),
-        }
-    }
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
         let GamePhase::Programming(vec) = &mut self.phase else {
@@ -385,46 +356,154 @@ impl Ord for AntennaDist {
     }
 }
 
-pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>) {
+fn execute_card(
+    mut game_arc: Arc<RwLock<Game>>,
+    player_i: usize,
+    register_i: usize,
+) -> BoxFuture<'static, ()> {
+    async move {
+        use Card::*;
+        let mut guard = game_arc.write().await;
+        let game = guard.deref_mut();
+        let GamePhase::Moving { cards, .. } = &mut game.phase
+    else {
+        panic!("Invalid state")
+    };
+        let card = cards
+            .get_mut(player_i)
+            .unwrap()
+            .get_mut(register_i)
+            .unwrap();
+        let player = game.players.get_mut(player_i).unwrap();
+
+        match card {
+            SPAM => {
+                game.damage_piles.spam += 1;
+                *card = player.draw_one();
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+                execute_card(game_arc, player_i, register_i);
+            }
+            Worm => {
+                game.damage_piles.worm += 1;
+                *card = player.draw_one();
+                // move out of bounds = reboot
+                player.public_state.position.x = usize::MAX;
+                drop(guard);
+                after_move(&mut game_arc, &[player_i]).await;
+            }
+            Virus => todo!(),
+            Trojan => {
+                game.damage_piles.trojan += 1;
+                player.draw_spam(&mut game.damage_piles);
+                player.draw_spam(&mut game.damage_piles);
+                *card = player.draw_one();
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+                execute_card(game_arc, player_i, register_i).await;
+            }
+            Move1 => {
+                let moved = game.mov(player_i, true, None);
+                drop(guard);
+                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+            }
+            Move2 => {
+                let moved = game.mov(player_i, true, None);
+                let did_move = moved.is_some();
+                drop(guard);
+                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                if did_move {
+                    let moved2 = game_arc.write().await.mov(player_i, true, None);
+                    after_move(&mut game_arc, moved2.unwrap_or_default().as_ref()).await;
+                }
+            }
+            Move3 => {
+                let moved = game.mov(player_i, true, None);
+                let did_move = moved.is_some();
+                drop(guard);
+                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                if did_move {
+                    let moved2 = game_arc.write().await.mov(player_i, true, None);
+                    let did_move2 = moved2.is_some();
+                    after_move(&mut game_arc, moved2.unwrap_or_default().as_ref()).await;
+                    if did_move2 {
+                        let moved3 = game_arc.write().await.mov(player_i, true, None);
+                        after_move(&mut game_arc, moved3.unwrap_or_default().as_ref()).await;
+                    }
+                }
+            }
+            Reverse1 => {
+                let dir = player.public_state.direction.rotated().rotated();
+                let moved = game.mov(player_i, true, Some(dir));
+                drop(guard);
+                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+            }
+            TurnRight => {
+                player.public_state.direction = player.public_state.direction.rotated();
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+            }
+            TurnLeft => {
+                player.public_state.direction =
+                    player.public_state.direction.rotated().rotated().rotated();
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+            }
+            UTurn => {
+                player.public_state.direction = player.public_state.direction.rotated().rotated();
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+            }
+            Again => {
+                drop(guard);
+                execute_card(game_arc, player_i, register_i - 1);
+            }
+        }
+    }
+    .boxed()
+}
+
+pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>) {
     use RegisterMovePhase::*;
-
-    let sleep_after_move = || sleep(Duration::from_secs(3));
-
     game_arc.write().await.phase = GamePhase::Moving {
         cards,
         register: 0,
         register_phase: RegisterMovePhase::PlayerCards,
     };
     loop {
-        let game = game_arc.read().await;
-        let (cards, register, register_phase) = match &game.phase {
-            GamePhase::Moving {
-                cards,
-                register,
-                register_phase,
-            } => (cards.clone(), *register, *register_phase),
-            _ => panic!("Invalid state"),
-        };
-        let mut player_i_sorted_by_priority: Vec<usize> = game
-            .players
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p.public_state.is_rebooting)
-            .map(|(i, _)| i)
-            .collect();
-        player_i_sorted_by_priority.sort_by_key(|i| AntennaDist {
-            me: unsafe { game.players.get_unchecked(*i) }
-                .public_state
-                .position,
-            antenna: game.map.antenna,
-        });
-        drop(game);
+        let cards;
+        let register;
+        let register_phase;
+        let player_i_sorted_by_priority;
+        {
+            let game = game_arc.read().await;
+            (cards, register, register_phase) = match &game.phase {
+                GamePhase::Moving {
+                    cards,
+                    register,
+                    register_phase,
+                } => (cards.clone(), *register, *register_phase),
+                _ => panic!("Invalid state"),
+            };
+            let mut active_players: Vec<usize> = game
+                .players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.public_state.is_rebooting)
+                .map(|(i, _)| i)
+                .collect();
+            active_players.sort_by_key(|i| AntennaDist {
+                me: unsafe { game.players.get_unchecked(*i) }
+                    .public_state
+                    .position,
+                antenna: game.map.antenna,
+            });
+            player_i_sorted_by_priority = active_players;
+        }
         let next_register_phase = match register_phase {
             PlayerCards => {
                 for player_i in player_i_sorted_by_priority {
-                    game_arc.write().await.execute_card(player_i, register);
-                    game_arc.read().await.notify_update().await;
-                    sleep_after_move().await;
+                    execute_card(game_arc.clone(), player_i, register).await;
                 }
                 FastBelts
             }
@@ -436,8 +515,9 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                         if let TileType::Belt(true, dir, end) =
                             game.map.tiles.get(pos.x, pos.y).unwrap().typ
                         {
+                            debug!("Moving player {} on a fast belt", player_i);
                             let moved = game.mov(player_i, false, Some(dir));
-                            if moved {
+                            if moved.is_some() {
                                 match end {
                                     BeltEnd::Straight => {}
                                     BeltEnd::TurnLeft => {
@@ -464,8 +544,7 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                                 }
                             }
                             drop(game);
-                            game_arc.read().await.notify_update().await;
-                            sleep_after_move().await;
+                            after_move(&mut game_arc, &moved.unwrap_or_default()).await;
                         }
                     }
                 }
@@ -478,8 +557,9 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                     if let TileType::Belt(false, dir, end) =
                         game.map.tiles.get(pos.x, pos.y).unwrap().typ
                     {
+                        debug!("Moving player {} on a slow belt", player_i);
                         let moved = game.mov(player_i, false, Some(dir));
-                        if moved {
+                        if moved.is_some() {
                             match end {
                                 BeltEnd::Straight => {}
                                 BeltEnd::TurnLeft => {
@@ -497,8 +577,7 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                             }
                         }
                         drop(game);
-                        game_arc.read().await.notify_update().await;
-                        sleep_after_move().await;
+                        after_move(&mut game_arc, &moved.unwrap_or_default()).await;
                     }
                 }
                 PushPanels
@@ -511,10 +590,10 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                         game.map.tiles.get(pos.x, pos.y).unwrap().typ
                     {
                         if *active.get(register).unwrap() {
-                            game.mov(player_i, true, Some(dir));
+                            debug!("Moving player {} from a push panel", player_i);
+                            let moved = game.mov(player_i, true, Some(dir));
                             drop(game);
-                            game_arc.read().await.notify_update().await;
-                            sleep_after_move().await;
+                            after_move(&mut game_arc, &moved.unwrap_or_default()).await;
                         }
                     }
                 }
@@ -525,6 +604,7 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                 // explicitely separating guard to satisfy borrow rules - can't borrow from guard twice
                 // at once (deref), but can deref once and then borrow different fields
                 let game: &mut Game = guard.deref_mut();
+                let mut any_rotated = false;
                 for player_i in player_i_sorted_by_priority {
                     let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
                     if let TileType::Rotation(is_cw) = game
@@ -540,11 +620,13 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                         } else {
                             dir.rotated().rotated().rotated()
                         };
+                        any_rotated = true;
                     }
                 }
                 drop(guard);
-                game_arc.read().await.notify_update().await;
-                sleep_after_move().await;
+                if any_rotated {
+                    notify_sleep(&mut game_arc).await;
+                }
                 Lasers
             }
             Lasers => {
@@ -556,36 +638,54 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                 Checkpoints
             }
             Checkpoints => {
+                let mut winner = None;
+
                 let mut guard = game_arc.write().await;
                 let game: &mut Game = guard.deref_mut();
-                let mut winner = None;
                 for player_i in player_i_sorted_by_priority {
-                    let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
-                    if *game.map.checkpoints.get(player_state.checkpoint).unwrap()
-                        == player_state.position
+                    let player = &mut game.players.get_mut(player_i).unwrap();
+                    if *game
+                        .map
+                        .checkpoints
+                        .get(player.public_state.checkpoint)
+                        .unwrap()
+                        == player.public_state.position
                     {
-                        player_state.checkpoint += 1;
-                        if winner.is_none() && player_state.checkpoint == game.map.checkpoints.len()
+                        player.public_state.checkpoint += 1;
+                        if winner.is_none()
+                            && player.public_state.checkpoint == game.map.checkpoints.len()
                         {
                             winner = Some(player_i)
                         }
                     }
                 }
-                drop(guard);
-                game_arc.read().await.notify_update().await;
-                sleep_after_move().await;
 
-                let mut game = game_arc.write().await;
-                if let Some(player_i) = winner {
-                    game.phase = GamePhase::HasWinner(player_i);
-                    drop(game);
-                    game_arc.read().await.notify_update().await;
-                    sleep(Duration::from_secs(60)).await;
-                    return;
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+
+                {
+                    if let Some(player_i) = winner {
+                        {
+                            let mut game = game_arc.write().await;
+                            info!(
+                                "Game won by {}",
+                                game.players
+                                    .get(player_i)
+                                    .unwrap()
+                                    .connected
+                                    .upgrade()
+                                    .map_or_else(
+                                        || "<disconnected player>".to_string(),
+                                        |p| p.name.clone()
+                                    )
+                            );
+                            game.phase = GamePhase::HasWinner(player_i);
+                        }
+                    }
                 }
 
-                let mut game = game_arc.write().await;
                 if register < 4 {
+                    let mut game = game_arc.write().await;
                     if let GamePhase::Moving { register, .. } = &mut game.phase {
                         *register += 1;
                     } else {
@@ -593,6 +693,7 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                     }
                     PlayerCards
                 } else {
+                    let mut game = game_arc.write().await;
                     for (player, player_programmed) in game.players.iter_mut().zip(cards.iter()) {
                         player.discard_pile.extend(player_programmed);
                         player
@@ -602,17 +703,49 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                     }
                     game.phase =
                         GamePhase::Programming(repeat(None).take(game.players.len()).collect());
+
                     drop(game);
-                    game_arc.read().await.notify_update().await;
+                    notify_sleep(&mut game_arc).await;
                     return;
                 }
             }
         };
         let mut game = game_arc.write().await;
-        // todo : if out of map, start reboot
         match &mut game.phase {
             GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
             _ => panic!("Invalid state"),
         }
     }
+}
+
+/// Asking for a mutable game_arc reference to help check that it isn't borrowed anywhere
+async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
+    game_arc.read().await.notify_update().await;
+
+    eprintln!("Enter to continue");
+    BufReader::new(tokio::io::stdin())
+        .read_line(&mut String::new())
+        .await
+        .unwrap();
+}
+
+async fn after_move(game_arc: &mut Arc<RwLock<Game>>, moved_players: &[usize]) {
+    notify_sleep(game_arc).await;
+    /*
+    todo: reboot if out of bounds
+
+    this will have to be well thought-out:
+    - requires access to whole game board
+    - as a result of rebooting, already-rebooting players can be moved
+        - another reboot of that player should, however, result in a panic, since that would get us into a loop
+    - reboot can happen:
+        - after belt move (that's easy even for fast belts, as second belt move doesn't change position if we're not above a belt anymore)
+        - push panel (1-step, easy)
+        - by playing a card:
+            - move card
+            - virus
+        - by getting pushed
+
+    Instinctively, I think I'd implement reboot in
+    */
 }

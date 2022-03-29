@@ -7,7 +7,8 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "allowJs": true,
-    "checkJs": true
+    "checkJs": true,
+    "paths": { "frontend-wasm": ["../backend/roborally-frontend-wasm/pkg"] }
   },
   "include": ["src/**/*.d.ts", "src/**/*.ts", "src/**/*.js", "src/**/*.svelte"],
   "references": [{ "path": "./tsconfig.node.json" }]

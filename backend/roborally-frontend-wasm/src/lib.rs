@@ -21,20 +21,21 @@ use roborally_structs::{
     card::wrapper::CardWrapper,
     game_map::GameMap,
     game_state::PlayerGameStateView,
+    logging::{self, debug},
     transport::{ClientMessage, ServerMessage},
 };
 
 use js_sys::Function;
 use std::panic;
 use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::console;
 
-///// INIT /////
+/* ##### INIT ##### */
 #[wasm_bindgen(start)]
-pub fn init_panic_hook() {
+pub fn run_initializations() {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
+    logging::init();
 }
-///// /INIT /////
+/* ##### /INIT ##### */
 
 #[wasm_bindgen]
 extern "C" {
@@ -86,7 +87,7 @@ impl MessageProcessor {
         {
             ServerMessage::Notice(msg) => notify.call(msg)?,
             ServerMessage::SetState(state) => {
-                console::log_1(&format!("{:?}", &state).into());
+                debug!("{:?}", &state);
                 set_state.call(state)?;
             }
             _ => notify.call(format!("Error: unexpected message from server"))?,

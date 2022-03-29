@@ -5,7 +5,7 @@ use crate::{
     tile::{Grid, Tile},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct GameMap {
@@ -14,4 +14,10 @@ pub struct GameMap {
     pub reboot_token: (Position, Direction),
     pub checkpoints: Vec<Position>,
     pub spawn_points: Vec<(Position, Direction)>,
+}
+
+impl std::fmt::Debug for GameMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GameMap").finish_non_exhaustive()
+    }
 }

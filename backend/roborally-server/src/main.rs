@@ -29,7 +29,7 @@ use game::Game;
 use game_connection::PlayerConnection;
 use http::StatusCode;
 use rand::random;
-use roborally_structs::game_map::GameMap;
+use roborally_structs::{game_map::GameMap, logging};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use warp::{reply::with_status, Filter, Reply};
@@ -140,6 +140,7 @@ fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
 
 #[tokio::main]
 async fn main() {
+    logging::init();
     let maps: Maps = Arc::new(load_maps!["test.csv"]);
     // Shared game state. web::Data uses Arc internally, so we create state outside the server factory, and the factory clones the Arc for each thread
 

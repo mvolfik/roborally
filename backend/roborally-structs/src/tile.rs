@@ -47,14 +47,14 @@ impl<T> Grid<T> {
         if x >= self.size.x || y >= self.size.y {
             return None;
         }
-        self.vec.get((y * self.size.x + x))
+        self.vec.get(y * self.size.x + x)
     }
 
     pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut T> {
         if x >= self.size.x || y >= self.size.y {
             return None;
         }
-        self.vec.get_mut((y * self.size.x + x))
+        self.vec.get_mut(y * self.size.x + x)
     }
 
     pub fn size(&self) -> Position {

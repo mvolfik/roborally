@@ -3,7 +3,7 @@
     AssetMap,
     PlayerGameStateView,
     PlayerPublicStateWrapper,
-  } from "frontend-wasm/roborally_frontend_wasm";
+  } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
   import { readable, Readable, Writable } from "svelte/store";
@@ -66,8 +66,7 @@
           </div>
         {/each}
       {/each}
-      {#each Array($stateStore.players) as _, i}
-        {@const player = $stateStore.get_player(i)}
+      {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player}
         {@const pos = player.position}
         <img
           src={robot}

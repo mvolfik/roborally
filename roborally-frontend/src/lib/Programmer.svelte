@@ -1,11 +1,10 @@
 <script lang="ts">
-  import type { CardWrapper } from "../../frontend-wasm";
+  import type { CardWrapper } from "frontend-wasm";
   import { dndzone } from "svelte-dnd-action";
   import { createEventDispatcher, onMount } from "svelte";
   import { getCardAsset } from "./utils";
   import { flip } from "svelte/animate";
 
-  export let seat: number;
   type CardWithId = { originalCard: CardWrapper; asset: string; id: number };
   type MaybeCard = [CardWithId] | [];
   export let initialCards: Array<CardWrapper>;
@@ -43,7 +42,7 @@
     }>();
 </script>
 
-<div class="outer" style:--player-i={seat}>
+<div class="outer">
   <p class="hand-title">Cards in your hand</p>
   <p class="registers-title">
     Programmed registers
@@ -107,12 +106,7 @@
 
     --programmer-inner-width: calc(var(--programmer-width) - 2 * 20px);
 
-    background-color: hsla(
-      calc(228 + var(--player-i) * 0.7 / 3.9 * 360),
-      93%,
-      22%,
-      0.62
-    );
+    background-color: var(--seat-color);
     border-radius: 20px 20px 0 0;
     box-sizing: border-box;
     display: grid;

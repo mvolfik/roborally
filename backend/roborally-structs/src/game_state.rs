@@ -1,5 +1,11 @@
-use crate::{card::Card, position::Direction, position::Position};
+use crate::{
+    card::Card,
+    position::{Direction, Position},
+};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "client")]
+use crate::card::wrapper::CardWrapper;
 
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -26,6 +32,7 @@ pub enum GamePhaseView {
         register_phase: RegisterMovePhase,
         // Only cards for this register are visible
         cards: Vec<Card>,
+        my_registers: [Card; 5],
     },
     Programming {
         ready: Vec<bool>,
@@ -88,8 +95,8 @@ impl PlayerGameStateView {
     pub fn hand_len(&self) -> usize {
         self.hand.len()
     }
-    pub fn get_hand_card(&self, i: usize) -> Option<crate::card::wrapper::CardWrapper> {
-        Some(crate::card::wrapper::CardWrapper(*self.hand.get(i)?))
+    pub fn get_hand_card(&self, i: usize) -> Option<CardWrapper> {
+        Some(CardWrapper(*self.hand.get(i)?))
     }
     #[wasm_bindgen(getter)]
     pub fn phase(&self) -> GamePhase {
@@ -102,17 +109,47 @@ impl PlayerGameStateView {
             GamePhaseView::HasWinner(..) => GamePhase::HasWinner,
         }
     }
+
+    #[wasm_bindgen]
+    pub fn get_my_register_card(&self, i: usize) -> Option<CardWrapper> {
+        match self.phase {
+            GamePhaseView::Moving { my_registers, .. } => {
+                my_registers.get(i).map(|c| CardWrapper(*c))
+            }
+            GamePhaseView::Programming { my_cards, .. } => my_cards
+                .and_then(|cs| cs.into_iter().nth(i))
+                .map(|c| CardWrapper(c)),
+            GamePhaseView::HasWinner(_) => None,
+        }
+    }
+    #[wasm_bindgen(getter)]
+    pub fn moving_phase_register_number(&self) -> usize {
+        if let GamePhaseView::Moving { register, .. } = self.phase {
+            register
+        } else {
+            0
+        }
+    }
+    #[wasm_bindgen(getter)]
+    pub fn moving_phase_register_phase(&self) -> usize {
+        if let GamePhaseView::Moving { register_phase, .. } = self.phase {
+            register_phase as usize
+        } else {
+            0
+        }
+    }
+
     #[wasm_bindgen(getter)]
     pub fn players(&self) -> usize {
         self.player_states.len()
     }
     pub fn get_player(&self, i: usize) -> Option<wrapper::PlayerPublicStateWrapper> {
         if let (Some(name), Some(player)) = (self.player_names.get(i), self.player_states.get(i)) {
-            Some(wrapper::PlayerPublicStateWrapper(
-                *player,
-                name.as_ref().map(|x| x.clone()),
-                i,
-            ))
+            Some(wrapper::PlayerPublicStateWrapper {
+                state: *player,
+                name: name.as_ref().map(|x| x.clone()),
+                seat: i,
+            })
         } else {
             None
         }
@@ -121,6 +158,14 @@ impl PlayerGameStateView {
     pub fn is_ready_programming(&self, i: usize) -> Option<bool> {
         if let GamePhaseView::Programming { ready, .. } = &self.phase {
             ready.get(i).copied()
+        } else {
+            None
+        }
+    }
+
+    pub fn get_player_card_for_current_register(&self, player_i: usize) -> Option<CardWrapper> {
+        if let GamePhaseView::Moving { cards, .. } = &self.phase {
+            cards.get(player_i).map(|c| CardWrapper(*c))
         } else {
             None
         }
@@ -136,24 +181,24 @@ mod wrapper {
     use super::PlayerPublicState;
 
     #[wasm_bindgen]
-    pub struct PlayerPublicStateWrapper(
-        pub(super) PlayerPublicState,
-        pub(super) Option<String>,
-        pub(super) usize,
-    );
+    pub struct PlayerPublicStateWrapper {
+        pub(super) state: PlayerPublicState,
+        pub(super) name: Option<String>,
+        pub(super) seat: usize,
+    }
 
     #[wasm_bindgen]
     impl PlayerPublicStateWrapper {
         #[wasm_bindgen(getter)]
         pub fn position(&self) -> Position {
-            self.0.position
+            self.state.position
         }
 
         #[wasm_bindgen(getter)]
         /// Note: doesn't include transform to current tile
         pub fn transform_string(&self) -> String {
             Transform {
-                rotate: self.0.direction.get_rotation(),
+                rotate: self.state.direction.get_rotation(),
                 ..Transform::default()
             }
             .to_string()
@@ -162,12 +207,12 @@ mod wrapper {
         #[wasm_bindgen(getter)]
         /// Note: doesn't include transform to current tile
         pub fn filter_string(&self) -> String {
-            format!("hue-rotate({}rad)", self.2 as f64 * 0.9)
+            format!("hue-rotate({}rad)", self.seat as f64 * 0.9)
         }
 
         #[wasm_bindgen(getter)]
         pub fn name(&self) -> Option<String> {
-            self.1.as_ref().map(|x| x.clone())
+            self.name.as_ref().map(|x| x.clone())
         }
     }
 }
