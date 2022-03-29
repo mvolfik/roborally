@@ -333,7 +333,7 @@ impl Game {
             ));
         }
         *my_programmed_ref = Some(cards);
-        
+
         let mut i = 0;
         player.hand.retain(move |_| {
             let res = !used_hand_indexes.contains(&i);
@@ -405,7 +405,13 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
             } => (cards.clone(), *register, *register_phase),
             _ => panic!("Invalid state"),
         };
-        let mut player_i_sorted_by_priority: Vec<usize> = (0..game.players.len()).collect();
+        let mut player_i_sorted_by_priority: Vec<usize> = game
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.public_state.is_rebooting)
+            .map(|(i, _)| i)
+            .collect();
         player_i_sorted_by_priority.sort_by_key(|i| AntennaDist {
             me: unsafe { game.players.get_unchecked(*i) }
                 .public_state
@@ -506,11 +512,11 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                     {
                         if *active.get(register).unwrap() {
                             game.mov(player_i, true, Some(dir));
+                            drop(game);
+                            game_arc.read().await.notify_update().await;
+                            sleep_after_move().await;
                         }
                     }
-                    drop(game);
-                    game_arc.read().await.notify_update().await;
-                    sleep_after_move().await;
                 }
                 Rotations
             }
@@ -519,11 +525,16 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                 // explicitely separating guard to satisfy borrow rules - can't borrow from guard twice
                 // at once (deref), but can deref once and then borrow different fields
                 let game: &mut Game = guard.deref_mut();
-                for player in game.players.iter_mut() {
-                    let pos = player.public_state.position;
-                    if let TileType::Rotation(is_cw) = game.map.tiles.get(pos.x, pos.y).unwrap().typ
+                for player_i in player_i_sorted_by_priority {
+                    let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
+                    if let TileType::Rotation(is_cw) = game
+                        .map
+                        .tiles
+                        .get(player_state.position.x, player_state.position.y)
+                        .unwrap()
+                        .typ
                     {
-                        let dir = &mut player.public_state.direction;
+                        let dir = &mut player_state.direction;
                         *dir = if is_cw {
                             dir.rotated()
                         } else {
@@ -548,17 +559,13 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
                 let mut guard = game_arc.write().await;
                 let game: &mut Game = guard.deref_mut();
                 let mut winner = None;
-                for (player_i, player) in game.players.iter_mut().enumerate() {
-                    if *game
-                        .map
-                        .checkpoints
-                        .get(player.public_state.checkpoint as usize)
-                        .unwrap()
-                        == player.public_state.position
+                for player_i in player_i_sorted_by_priority {
+                    let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
+                    if *game.map.checkpoints.get(player_state.checkpoint).unwrap()
+                        == player_state.position
                     {
-                        player.public_state.checkpoint += 1;
-                        if winner.is_none()
-                            && player.public_state.checkpoint == game.map.checkpoints.len()
+                        player_state.checkpoint += 1;
+                        if winner.is_none() && player_state.checkpoint == game.map.checkpoints.len()
                         {
                             winner = Some(player_i)
                         }
@@ -602,6 +609,7 @@ pub async fn run_moving_phase(game_arc: Arc<RwLock<Game>>, cards: Vec<[Card; 5]>
             }
         };
         let mut game = game_arc.write().await;
+        // todo : if out of map, start reboot
         match &mut game.phase {
             GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
             _ => panic!("Invalid state"),
