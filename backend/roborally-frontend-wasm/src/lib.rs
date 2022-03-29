@@ -74,7 +74,9 @@ impl MessageProcessor {
         {
             ServerMessage::Notice(msg) => Err(msg.into()),
             ServerMessage::InitInfo(map) => Ok(map.into()),
-            ServerMessage::SetState(_) => Err("Unexpected error when initializing connection".into()),
+            ServerMessage::SetState(_) => {
+                Err("Unexpected error when initializing connection".into())
+            }
         }
     }
 
@@ -91,16 +93,20 @@ impl MessageProcessor {
                 debug!("{:?}", &state);
                 set_state.call(state)?;
             }
-            ServerMessage::InitInfo(_) => notify.call("Error: unexpected message from server".to_string())?,
+            ServerMessage::InitInfo(_) => {
+                notify.call("Error: unexpected message from server".to_string())?
+            }
         }
         Ok(())
     }
 
-    #[must_use] pub fn create_init_message(name: String, seat: usize) -> Vec<u8> {
+    #[must_use]
+    pub fn create_init_message(name: String, seat: usize) -> Vec<u8> {
         rmp_serde::to_vec(&ClientMessage::Init { name, seat }).unwrap()
     }
 
-    #[must_use] pub fn create_program_cards_message(
+    #[must_use]
+    pub fn create_program_cards_message(
         card1: &CardWrapper,
         card2: &CardWrapper,
         card3: &CardWrapper,
