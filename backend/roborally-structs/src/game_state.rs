@@ -214,5 +214,10 @@ mod wrapper {
         pub fn name(&self) -> Option<String> {
             self.name.as_ref().map(|x| x.clone())
         }
+
+        #[wasm_bindgen(getter)]
+        pub fn checkpoint(&self) -> usize {
+            self.state.checkpoint
+        }
     }
 }

@@ -223,7 +223,7 @@ impl Game {
                 // falling into void
                 break 'checks;
             };
-            if origin_tile.walls.get(&direction.rotated().rotated()) {
+            if target_tile.walls.get(&direction.rotated().rotated()) {
                 debug!("There's a wall on target tile");
                 return None;
             }
@@ -367,6 +367,7 @@ fn execute_card(
             .get_mut(register_i)
             .unwrap();
         let player = game.players.get_mut(player_i).unwrap();
+        debug!("Executing {:?} for {}", &card, player_i);
 
         match card {
             SPAM => {
@@ -374,7 +375,7 @@ fn execute_card(
                 *card = player.draw_one();
                 drop(guard);
                 notify_sleep(&mut game_arc).await;
-                execute_card(game_arc, player_i, register_i);
+                execute_card(game_arc, player_i, register_i).await;
             }
             Worm => {
                 game.damage_piles.worm += 1;
@@ -448,7 +449,7 @@ fn execute_card(
             }
             Again => {
                 drop(guard);
-                execute_card(game_arc, player_i, register_i - 1);
+                execute_card(game_arc, player_i, register_i - 1).await;
             }
         }
     }
@@ -469,6 +470,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
         }
     }
     loop {
+        notify_sleep(&mut game_arc).await;
         let register;
         let register_phase;
         let player_i_sorted_by_priority;
@@ -489,7 +491,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 .players
                 .iter()
                 .enumerate()
-                .filter(|(_, p)| p.public_state.is_rebooting)
+                .filter(|(_, p)| !p.public_state.is_rebooting)
                 .map(|(i, _)| i)
                 .collect();
             active_players.sort_by_key(|i| AntennaDist {
@@ -500,6 +502,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
             });
             player_i_sorted_by_priority = active_players;
         }
+        debug!("Executing phase {}.{:?}", register, register_phase);
         let next_register_phase = match register_phase {
             PlayerCards => {
                 for player_i in player_i_sorted_by_priority {
@@ -681,6 +684,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     )
                             );
                             game.phase = GamePhase::HasWinner(player_i);
+                            drop(game);
+                            notify_sleep(&mut game_arc).await;
+                            return;
                         }
                     }
                 }
@@ -694,6 +700,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     } else {
                         panic!("Invalid state");
                     }
+                    drop(game);
                     PlayerCards
                 } else {
                     #[allow(clippy::shadow_unrelated)]
@@ -709,9 +716,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     }
                     game.phase =
                         GamePhase::Programming(repeat(None).take(game.players.len()).collect());
-
-                    drop(game);
-                    notify_sleep(&mut game_arc).await;
+                    game.notify_update();
                     return;
                 }
             }

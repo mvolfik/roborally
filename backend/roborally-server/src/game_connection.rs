@@ -59,7 +59,7 @@ impl PlayerConnection {
                 return;
             }
             Some(Ok(ws_msg)) if ws_msg.is_close() => {
-                writer.0.close().await.unwrap();
+                writer.0.close().await;
                 return;
             }
             Some(Ok(ws_msg)) => match rmp_serde::from_slice::<ClientMessage>(ws_msg.as_bytes()) {
@@ -110,7 +110,7 @@ impl PlayerConnection {
                 let res: Result<(), String> = match ws_res {
                     Err(e) => Err(format!("Connection error: {}", e)),
                     Ok(ws_msg) if ws_msg.is_close() => {
-                        self_arc.socket.write().await.0.close().await.unwrap();
+                        self_arc.socket.write().await.0.close().await;
                         Ok(())
                     }
                     Ok(ws_msg) => match rmp_serde::from_slice::<ClientMessage>(ws_msg.as_bytes()) {

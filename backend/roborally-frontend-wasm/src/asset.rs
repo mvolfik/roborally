@@ -125,20 +125,24 @@ impl From<&Tile> for TileAssets {
 
 #[wasm_bindgen]
 #[derive(Clone)]
-pub struct AssetMap(Grid<TileAssets>);
+pub struct AssetMap {
+    grid: Grid<TileAssets>,
+    #[wasm_bindgen(readonly)]
+    pub checkpoints: usize,
+}
 
 #[wasm_bindgen]
 impl AssetMap {
     pub fn get(&self, x: usize, y: usize) -> Option<TileAssets> {
-        self.0.get(x, y).cloned()
+        self.grid.get(x, y).cloned()
     }
     #[wasm_bindgen(getter)]
     pub fn width(&self) -> usize {
-        self.0.size().x
+        self.grid.size().x
     }
     #[wasm_bindgen(getter)]
     pub fn height(&self) -> usize {
-        self.0.size().y
+        self.grid.size().y
     }
 }
 
@@ -201,6 +205,9 @@ impl From<GameMap> for AssetMap {
             });
         }
 
-        Self(assets)
+        Self {
+            grid: assets,
+            checkpoints: m.checkpoints.len(),
+        }
     }
 }

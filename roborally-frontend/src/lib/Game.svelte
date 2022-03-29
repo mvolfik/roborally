@@ -99,7 +99,7 @@
           </div>
           <div
             class="register-move-phase-indicator"
-            style:--register-phase={$stateStore.moving_phase_register_phase}
+            style:--register-phase={$stateStore.moving_phase_register_phase + 1}
           >
             <span class="marker">&gt;</span>
             <span>Programmed cards</span>
@@ -145,6 +145,12 @@
             {:else}
               <div class="name">{name}</div>
             {/if}
+            <div class="checkpoints">
+              Checkpoints
+              {#each [...Array(map.checkpoints)].map((_, i) => player.checkpoint > i) as checkpoint_reached}
+                <div class="indicator" class:true={checkpoint_reached} />
+              {/each}
+            </div>
             {#if $stateStore.phase == GamePhase.Moving}
               <img
                 src={getCardAsset(
@@ -156,8 +162,8 @@
             {:else}
               <div>
                 Ready: <div
-                  class="ready-indicator"
-                  class:ready={$stateStore.is_ready_programming(player_i)}
+                  class="indicator"
+                  class:true={$stateStore.is_ready_programming(player_i)}
                 />
               </div>
             {/if}
@@ -215,15 +221,21 @@
     color: rgb(255, 95, 37);
   }
 
-  .ready-indicator {
+  .checkpoints .indicator {
+    border: 3px solid black;
+    box-sizing: border-box;
+    border-radius: 5px;
+    margin: 0 2px;
+  }
+  .indicator {
     width: 1em;
     background-color: red;
     display: inline flow-root;
-    height: 1em;
-    vertical-align: middle;
+    height: 1.1em;
+    vertical-align: text-top;
   }
 
-  .ready-indicator.ready {
+  .indicator.true {
     background-color: green;
   }
 
