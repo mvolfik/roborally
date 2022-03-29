@@ -27,7 +27,7 @@ use roborally_structs::{
 };
 
 use js_sys::Function;
-use std::panic;
+use std::{convert::Into, panic};
 use wasm_bindgen::{prelude::*, JsCast};
 
 /* ##### INIT ##### */
@@ -94,7 +94,7 @@ impl MessageProcessor {
                 set_state.call(state)?;
             }
             ServerMessage::InitInfo(_) => {
-                notify.call("Error: unexpected message from server".to_string())?
+                notify.call("Error: unexpected message from server".to_owned())?;
             }
         }
         Ok(())
@@ -123,6 +123,6 @@ impl MessageProcessor {
 #[wasm_bindgen]
 pub fn parse_map(bytes: &[u8]) -> Result<AssetMap, JsValue> {
     rmp_serde::from_slice::<GameMap>(bytes)
-        .map(std::convert::Into::into)
+        .map(Into::into)
         .map_err(|e| e.to_string().into())
 }

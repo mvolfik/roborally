@@ -43,7 +43,7 @@ impl PlayerConnection {
         let (w, mut reader) = socket.split();
         let mut writer = SocketWriter(w);
         let Some(game_lock) = game_opt else {
-            writer.close_with_notice("Game with this ID doesn't exist".to_string()).await;
+            writer.close_with_notice("Game with this ID doesn't exist".to_owned()).await;
             return;
         };
 
@@ -67,7 +67,7 @@ impl PlayerConnection {
                 Ok(_other) => {
                     writer
                         .close_with_notice(
-                            "Unexpected message type (server/client desync)".to_string(),
+                            "Unexpected message type (server/client desync)".to_owned(),
                         )
                         .await;
                     return;
@@ -84,7 +84,7 @@ impl PlayerConnection {
             let mut game = game_lock.write().await;
             let map = game.map.clone();
             let Some(player) = game.players.get_mut(seat) else {
-                writer.close_with_notice("There aren't that many seats".to_string()).await;
+                writer.close_with_notice("There aren't that many seats".to_owned()).await;
                 return
             };
             if let Some(p) = player.connected.upgrade() {
@@ -97,7 +97,7 @@ impl PlayerConnection {
 
             let conn = Arc::new(Self {
                 name: player_name,
-                game: game_lock.clone(),
+                game: Arc::clone(&game_lock),
                 seat,
                 socket: RwLock::new(writer),
             });
@@ -132,12 +132,12 @@ impl PlayerConnection {
                             let game = self_arc.game.read().await;
                             game.notify_update().await;
                             if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
-                                tokio::spawn(run_moving_phase(game_lock.clone()));
+                                tokio::spawn(run_moving_phase(Arc::clone(&game_lock)));
                             }
                             Ok(())
                         }
                         Ok(_other) => {
-                            Err("Unexpected message type (server/client desync)".to_string())
+                            Err("Unexpected message type (server/client desync)".to_owned())
                         }
                         Err(e) => Err(format!("Corrupted message: {}", e)),
                     },

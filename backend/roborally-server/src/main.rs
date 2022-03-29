@@ -8,9 +8,21 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::enum_glob_use)]
 #![allow(clippy::many_single_char_names)]
+// restrictions
+#![warn(clippy::allow_attributes_without_reason)]
+#![warn(clippy::clone_on_ref_ptr)]
+#![warn(clippy::else_if_without_else)]
+// enable later: #![warn(clippy::get_unwrap)]
+#![warn(clippy::if_then_some_else_none)]
+#![warn(clippy::let_underscore_must_use)]
 #![warn(clippy::shadow_reuse)]
 #![warn(clippy::shadow_same)]
 #![warn(clippy::shadow_unrelated)]
+#![warn(clippy::str_to_string)]
+#![warn(clippy::string_add)]
+#![warn(clippy::string_to_string)]
+#![warn(clippy::try_err)]
+// features
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 #![feature(let_else)]
@@ -37,7 +49,11 @@ use tokio::sync::RwLock;
 use warp::{reply::with_status, Filter, Reply};
 
 async fn socket_connect_handler(game_id: u64, ws: warp::ws::Ws, games_lock: Games) -> impl Reply {
-    let game = games_lock.read().await.get(&game_id).map(|x| x.1.clone());
+    let game = games_lock
+        .read()
+        .await
+        .get(&game_id)
+        .map(|x| Arc::clone(&x.1));
     ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
@@ -58,7 +74,7 @@ async fn new_game_handler(
     }: NewGameData,
 ) -> impl Reply {
     let Some(map) = maps.get(&map_name) else {
-        return with_status("Unknown map".to_string(), StatusCode::BAD_REQUEST)
+        return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST)
     };
     let game = match Game::new(map.clone(), players, name) {
         Ok(g) => g,
@@ -117,7 +133,7 @@ macro_rules! load_maps {
             HashMap::from([
                 $(
                     (
-                        $name.to_string(),
+                        $name.to_owned(),
                         GameMap::parse(include_str!(concat!("../../../maps/", $name)), concat!("Map(", $name, ")"))
                             .unwrap(),
                     ),
@@ -147,15 +163,15 @@ async fn main() {
     let maps: Maps = Arc::new(load_maps!["test.csv"]);
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
-    let create_games_state = || {
-        let arc = games.clone();
-        warp::any().map(move || arc.clone())
+    let create_games_state = move || {
+        let arc = Arc::clone(&games);
+        warp::any().map(move || Arc::clone(&arc))
     };
 
     let create_maps_state = move || {
-        let arc = maps.clone();
+        let arc = Arc::clone(&maps);
 
-        warp::any().map(move || arc.clone())
+        warp::any().map(move || Arc::clone(&arc))
     };
 
     let api = warp::path("api");

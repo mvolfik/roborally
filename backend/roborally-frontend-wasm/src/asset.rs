@@ -50,7 +50,7 @@ impl From<&Tile> for TileAssets {
 
         let mut assets = match t.typ {
             Void => vec![Asset {
-                uri: intern("void.png").to_string(),
+                uri: intern("void.png").to_owned(),
                 transform: Transform::default(),
             }],
             Floor => vec![Asset {
@@ -72,7 +72,7 @@ impl From<&Tile> for TileAssets {
                 }]
             }
             Rotation(is_clockwise) => vec![Asset {
-                uri: intern("rotate.png").to_string(),
+                uri: intern("rotate.png").to_owned(),
                 transform: Transform {
                     flip_x: !is_clockwise,
                     ..Transform::default()
@@ -80,7 +80,7 @@ impl From<&Tile> for TileAssets {
             }],
             PushPanel(dir, active_rounds) => {
                 let mut assets = vec![Asset {
-                    uri: intern("push-panel.png").to_string(),
+                    uri: intern("push-panel.png").to_owned(),
                     transform: Transform {
                         rotate: dir.get_rotation(),
                         ..Transform::default()
@@ -111,7 +111,7 @@ impl From<&Tile> for TileAssets {
         ] {
             if is_wall {
                 assets.push(Asset {
-                    uri: intern("wall.png").to_string(),
+                    uri: intern("wall.png").to_owned(),
                     transform: Transform {
                         rotate: dir.get_rotation(),
                         ..Transform::default()
@@ -152,7 +152,7 @@ impl From<GameMap> for AssetMap {
             .unwrap()
             .0
             .push(Asset {
-                uri: intern("antenna.png").to_string(),
+                uri: intern("antenna.png").to_owned(),
                 transform: Transform::default(),
             });
 
@@ -161,7 +161,7 @@ impl From<GameMap> for AssetMap {
             .unwrap()
             .0
             .push(Asset {
-                uri: intern("reboot-token.png").to_string(),
+                uri: intern("reboot-token.png").to_owned(),
                 transform: Transform {
                     rotate: m.reboot_token.1.get_rotation(),
                     ..Transform::default()
@@ -176,7 +176,7 @@ impl From<GameMap> for AssetMap {
                 .extend(
                     [
                         Asset {
-                            uri: intern("checkpoint.png").to_string(),
+                            uri: intern("checkpoint.png").to_owned(),
                             transform: Transform::default(),
                         },
                         Asset {
@@ -193,7 +193,7 @@ impl From<GameMap> for AssetMap {
 
         for (pos, dir) in m.spawn_points {
             assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
-                uri: intern("spawn-point.png").to_string(),
+                uri: intern("spawn-point.png").to_owned(),
                 transform: Transform {
                     rotate: dir.get_rotation(),
                     ..Transform::default()

@@ -65,7 +65,7 @@ impl<T> Grid<T> {
         if size.x * size.y == vec.len() {
             Ok(Self { vec, size })
         } else {
-            Err("Supplied position doesn't match vector size".to_string())
+            Err("Supplied position doesn't match vector size".to_owned())
         }
     }
 

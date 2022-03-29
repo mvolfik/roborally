@@ -16,7 +16,7 @@ fn format(record: &Record) -> String {
         record
             .line()
             .map(|x| x.to_string())
-            .unwrap_or_else(|| "??".to_string()),
+            .unwrap_or_else(|| "??".to_owned()),
         record.args()
     )
 }

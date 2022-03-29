@@ -167,7 +167,7 @@ impl Game {
 
     pub fn new(map: GameMap, players_n: usize, name: String) -> Result<Self, String> {
         if map.spawn_points.len() < players_n {
-            return Err("Not enough spawn points on map".to_string());
+            return Err("Not enough spawn points on map".to_owned());
         }
         let mut spawn_points = map.spawn_points.clone();
         let (shuffled_spawn_points, _) = spawn_points.partial_shuffle(&mut thread_rng(), players_n);
@@ -270,14 +270,14 @@ impl Game {
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
         let GamePhase::Programming(vec) = &mut self.phase else {
-            return Err("Programming phase isn't active right now".to_string());
+            return Err("Programming phase isn't active right now".to_owned());
         };
         if *cards.first().unwrap() == Card::Again {
-            return Err("Can't program Again in first slot".to_string());
+            return Err("Can't program Again in first slot".to_owned());
         }
         let my_programmed_ref = match vec.get_mut(seat).unwrap() {
             Some(_) => {
-                return Err("You have already programmed your cards for this round".to_string());
+                return Err("You have already programmed your cards for this round".to_owned());
             }
             x @ None => x,
         };
@@ -503,7 +503,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
         let next_register_phase = match register_phase {
             PlayerCards => {
                 for player_i in player_i_sorted_by_priority {
-                    execute_card(game_arc.clone(), player_i, register).await;
+                    execute_card(Arc::clone(&game_arc), player_i, register).await;
                 }
                 FastBelts
             }
@@ -676,7 +676,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     .connected
                                     .upgrade()
                                     .map_or_else(
-                                        || "<disconnected player>".to_string(),
+                                        || "<disconnected player>".to_owned(),
                                         |p| p.name.clone()
                                     )
                             );
