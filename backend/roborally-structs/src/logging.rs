@@ -9,7 +9,7 @@ fn format(record: &Record) -> String {
         "{}({}) {}@{}: {}",
         record.level(),
         match cur_thread.name() {
-            Some(n) => format!("{}: {}", n, cur_thread.id().as_u64()),
+            Some(n) => format!("{}:{}", n, cur_thread.id().as_u64()),
             None => cur_thread.id().as_u64().to_string(),
         },
         record.module_path().unwrap_or("<unknown module>"),

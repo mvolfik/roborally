@@ -155,8 +155,9 @@ impl PlayerConnection {
                         let game = self_arc.game.read().await;
                         game.notify_update().await;
                         if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
+                                drop(game);
                                 tokio::spawn(run_moving_phase(Arc::clone(&game_lock)));
-                            }
+                        };
                     }
                     _other => {
                         self_arc

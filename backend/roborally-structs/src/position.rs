@@ -54,9 +54,15 @@ impl Direction {
     // Return position 1 tile to <Self>
     pub fn apply(&self, Position { x, y }: &Position) -> Position {
         match self {
-            Direction::Up => Position { x: *x, y: y - 1 },
+            Direction::Up => Position {
+                x: *x,
+                y: y.wrapping_sub(1),
+            },
             Direction::Right => Position { x: x + 1, y: *y },
-            Direction::Down => Position { x: *x, y: y + 1 },
+            Direction::Down => Position {
+                x: *x,
+                y: y.wrapping_sub(1),
+            },
             Direction::Left => Position { x: x - 1, y: *y },
         }
     }

@@ -191,6 +191,10 @@ impl Game {
         join_all(futures).await;
     }
 
+    fn reboot(&mut self, player_i: usize) {
+        todo!()
+    }
+
     /// returns value:
     /// None => failed to move
     /// Some(vec) => moved, vec contains `player_i` of each player that was moved (in case of pushing train)
@@ -714,6 +718,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     }
                     game.phase =
                         GamePhase::Programming(repeat(None).take(game.players.len()).collect());
+                    debug!("Set game phase back to programming");
                     game.notify_update().await;
                     return;
                 }
