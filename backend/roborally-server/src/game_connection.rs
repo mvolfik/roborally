@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use futures::{stream::SplitSink, SinkExt, StreamExt};
+use futures::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use roborally_structs::{
     logging::{error, info, warn},
     transport::{ClientMessage, ServerMessage},
@@ -17,7 +20,10 @@ impl SocketWriter {
     pub async fn close_with_notice(&mut self, msg: String) {
         warn!("Closing connection with message: {}", &msg);
         self.send_message(ServerMessage::Notice(msg)).await;
-        self.0.send(Message::close()).await.unwrap();
+        self.0
+            .send(Message::close())
+            .await
+            .unwrap_or_else(|e| warn!("Error when closing connection: {}", e));
     }
 
     pub async fn send_message(&mut self, msg: ServerMessage) {
@@ -25,7 +31,7 @@ impl SocketWriter {
             self.0
                 .send(Message::binary(vec))
                 .await
-                .unwrap_or_else(|e| error!("{}", e));
+                .unwrap_or_else(|e| error!("Error sending message: {}", e));
         }
     }
 }
@@ -38,6 +44,48 @@ pub struct PlayerConnection {
     pub socket: RwLock<SocketWriter>,
 }
 
+async fn receive_client_message(
+    reader: &mut SplitStream<WebSocket>,
+    writer: &mut SocketWriter,
+) -> Option<ClientMessage> {
+    loop {
+        // if None, the connection is already closed. In all other cases, do close_with_notice and return None
+        let ws_msg = match reader.next().await? {
+            Ok(x) => x,
+            Err(e) => {
+                writer
+                    .close_with_notice(format!("Error receiving message: {}", e))
+                    .await;
+                break None;
+            }
+        };
+        break (
+            // this would be cleaner as recursion, but that is messy with async function
+            if ws_msg.is_close() {
+                None
+            } else if ws_msg.is_pong() || ws_msg.is_ping() {
+                // recursion
+                continue;
+            } else if ws_msg.is_binary() {
+                match rmp_serde::from_slice(ws_msg.as_bytes()) {
+                    Ok(msg) => Some(msg),
+                    Err(e) => {
+                        writer
+                            .close_with_notice(format!("Received corrupted message: {}", e))
+                            .await;
+                        None
+                    }
+                }
+            } else {
+                writer
+                    .close_with_notice("Received corrupted message (unknown type)".to_owned())
+                    .await;
+                None
+            }
+        );
+    }
+}
+
 impl PlayerConnection {
     pub async fn create_and_start(game_opt: Option<Arc<RwLock<Game>>>, socket: WebSocket) {
         let (w, mut reader) = socket.split();
@@ -47,38 +95,17 @@ impl PlayerConnection {
             return;
         };
 
-        let (player_name, seat) = match reader.next().await {
+        let (player_name, seat) = match receive_client_message(&mut reader, &mut writer).await {
             None => {
-                error!("unexpected None");
                 return;
             }
-            Some(Err(e)) => {
+            Some(ClientMessage::Init { name, seat }) => (name, seat),
+            Some(_other) => {
                 writer
-                    .close_with_notice(format!("Connection error: {}", e))
+                    .close_with_notice("Unexpected message type (server/client desync)".to_owned())
                     .await;
                 return;
             }
-            Some(Ok(ws_msg)) if ws_msg.is_close() => {
-                writer.0.close().await;
-                return;
-            }
-            Some(Ok(ws_msg)) => match rmp_serde::from_slice::<ClientMessage>(ws_msg.as_bytes()) {
-                Ok(ClientMessage::Init { name, seat }) => (name, seat),
-                Ok(_other) => {
-                    writer
-                        .close_with_notice(
-                            "Unexpected message type (server/client desync)".to_owned(),
-                        )
-                        .await;
-                    return;
-                }
-                Err(e) => {
-                    writer
-                        .close_with_notice(format!("Corrupted message: {}", e))
-                        .await;
-                    return;
-                }
-            },
         };
         let self_arc = {
             let mut game = game_lock.write().await;
@@ -106,47 +133,45 @@ impl PlayerConnection {
             conn
         };
         tokio::task::spawn(async move {
-            while let Some(ws_res) = reader.next().await {
-                let res: Result<(), String> = match ws_res {
-                    Err(e) => Err(format!("Connection error: {}", e)),
-                    Ok(ws_msg) if ws_msg.is_close() => {
-                        self_arc.socket.write().await.0.close().await;
-                        Ok(())
-                    }
-                    Ok(ws_msg) => match rmp_serde::from_slice::<ClientMessage>(ws_msg.as_bytes()) {
-                        Ok(ClientMessage::Program(cards)) => {
-                            let res = self_arc
-                                .game
+            while let Some(msg) =
+                receive_client_message(&mut reader, &mut *self_arc.socket.write().await).await
+            {
+                match msg {
+                    ClientMessage::Program(cards) => {
+                        let res = self_arc
+                            .game
+                            .write()
+                            .await
+                            .program(self_arc.seat, cards)
+                            .await;
+                        if let Err(e) = res {
+                            self_arc
+                                .socket
                                 .write()
                                 .await
-                                .program(self_arc.seat, cards)
+                                .send_message(ServerMessage::Notice(e))
                                 .await;
-                            if let Err(e) = res {
-                                self_arc
-                                    .socket
-                                    .write()
-                                    .await
-                                    .send_message(ServerMessage::Notice(e))
-                                    .await;
-                            }
-                            let game = self_arc.game.read().await;
-                            game.notify_update().await;
-                            if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
+                        }
+                        let game = self_arc.game.read().await;
+                        game.notify_update().await;
+                        if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
                                 tokio::spawn(run_moving_phase(Arc::clone(&game_lock)));
                             }
-                            Ok(())
-                        }
-                        Ok(_other) => {
-                            Err("Unexpected message type (server/client desync)".to_owned())
-                        }
-                        Err(e) => Err(format!("Corrupted message: {}", e)),
-                    },
-                };
-                if let Err(e) = res {
-                    self_arc.socket.write().await.close_with_notice(e).await;
+                    }
+                    _other => {
+                        self_arc
+                            .socket
+                            .write()
+                            .await
+                            .close_with_notice(
+                                "Unexpected message type (server/client desync)".to_owned(),
+                            )
+                            .await;
+                        break;
+                    }
                 }
+                info!("Ending receive loop for player {}", self_arc.name);
             }
-            info!("Ending receive loop for player {}", self_arc.name);
         });
     }
 }
