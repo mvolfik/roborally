@@ -147,7 +147,7 @@ impl PlayerConnection {
                                 .send_message(ServerMessage::Notice(e))
                                 .await;
                         }
-                        let game = self_arc.game.read().await;
+                        let mut game = self_arc.game.write().await;
                         game.notify_update().await;
                         if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
                                 drop(game);

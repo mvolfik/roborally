@@ -3,6 +3,7 @@
     AssetMap,
     PlayerGameStateView,
     PlayerPublicStateWrapper,
+    Position,
   } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
@@ -14,9 +15,39 @@
   export let stateStore: Readable<{
     players: number;
     get_player: (number) => PlayerPublicStateWrapper;
+    process_animations(process_bullet_closure: typeof processBullet): void;
   }> = readable({
     players: 0,
+    process_animations() {},
+    get_player(): any {},
   });
+
+  let innerDiv: HTMLDivElement;
+
+  function processBullet(from: Position, to: Position) {
+    const bullet = document.createElement("img");
+    // bullet.src = new URL("../assets/bullet.png", import.meta.url);
+    bullet.src = new URL("http://placekitten.com/20/10");
+    bullet.style = `
+      position: absolute;
+      left: ${(from.x + 0.5) * 64}px;
+      top: ${(from.y + 0.5) * 64}px;
+      transform: translate(-50%, -50%);
+      transition-property: left, top;
+      transition: 1s linear;`;
+    innerDiv.appendChild(bullet);
+    bullet.addEventListener("transitionend", () => {
+      innerDiv.removeChild(bullet);
+    });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bullet.style.left = `${(to.x + 0.5) * 64}px`;
+        bullet.style.top = `${(to.y + 0.5) * 64}px`;
+      });
+    });
+  }
+
+  $: $stateStore.process_animations(processBullet);
 
   let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
   $: {
@@ -37,7 +68,11 @@
 <div class="outer">
   <Zoomable>
     <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-    <div class="grid" on:mouseleave={() => (hovered = undefined)}>
+    <div
+      class="grid"
+      on:mouseleave={() => (hovered = undefined)}
+      bind:this={innerDiv}
+    >
       {#each Array(map.height) as _, y}
         {#each Array(map.width) as _, x}
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->

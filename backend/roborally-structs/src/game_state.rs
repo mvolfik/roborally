@@ -1,14 +1,18 @@
+use std::mem;
+
 use crate::{
+    animations::Animation,
     card::Card,
     position::{Direction, Position},
 };
+use log::error;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "client")]
 use crate::card::wrapper::CardWrapper;
 
 #[cfg(feature = "client")]
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "server", derive(Serialize))]
@@ -59,6 +63,7 @@ pub struct PlayerGameStateView {
     phase: GamePhaseView,
     hand: Vec<Card>,
     player_names: Vec<Option<String>>,
+    animations: Vec<Animation>,
 }
 
 #[cfg(feature = "server")]
@@ -69,12 +74,14 @@ impl PlayerGameStateView {
         phase: GamePhaseView,
         hand: Vec<Card>,
         player_names: Vec<Option<String>>,
+        animations: Vec<Animation>,
     ) -> Self {
         Self {
             player_states,
             phase,
             hand,
             player_names,
+            animations,
         }
     }
 }
@@ -170,6 +177,28 @@ impl PlayerGameStateView {
             None
         }
     }
+
+    pub fn process_animations(&mut self, process_bullet_closure: ProcessBulletClosure) {
+        let process_bullet = process_bullet_closure.unchecked_into::<js_sys::Function>();
+        for animation in mem::take(&mut self.animations) {
+            match animation {
+                Animation::BulletFlight(from, to) => {
+                    if let Err(e) =
+                        process_bullet.call2(&JsValue::UNDEFINED, &from.into(), &to.into())
+                    {
+                        error!("Error calling process_animation_closure: {:?}", e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "client")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "(from: Position, to: Position) => void")]
+    pub type ProcessBulletClosure;
 }
 
 #[cfg(feature = "client")]
@@ -205,7 +234,6 @@ mod wrapper {
         }
 
         #[wasm_bindgen(getter)]
-        /// Note: doesn't include transform to current tile
         pub fn filter_string(&self) -> String {
             format!("hue-rotate({}rad)", self.seat as f64 * 0.9)
         }

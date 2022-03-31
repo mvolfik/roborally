@@ -12,6 +12,7 @@ use futures::{
 };
 use rand::{prelude::SliceRandom, thread_rng};
 use roborally_structs::{
+    animations::Animation,
     card::Card,
     game_map::GameMap,
     game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState, RegisterMovePhase},
@@ -65,12 +66,6 @@ impl Player {
         };
         p.hand = p.draw_n(9);
         p
-    }
-
-    async fn send_message(&self, msg: ServerMessage) {
-        if let Some(conn) = self.connected.upgrade() {
-            conn.socket.write().await.send_message(msg).await;
-        }
     }
 
     pub fn draw_one(&mut self) -> Card {
@@ -133,10 +128,15 @@ pub struct Game {
     pub phase: GamePhase,
     pub name: String,
     pub damage_piles: DamagePiles,
+    pub animations: Vec<Animation>,
 }
 
 impl Game {
-    pub fn get_state_for_player(&self, seat: usize) -> PlayerGameStateView {
+    pub fn get_state_for_player(
+        &mut self,
+        seat: usize,
+        animations: Vec<Animation>,
+    ) -> PlayerGameStateView {
         let this_player_state = self.players.get(seat).unwrap();
         let phase: GamePhaseView = match &self.phase {
             GamePhase::Moving {
@@ -166,6 +166,7 @@ impl Game {
                 .iter()
                 .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
                 .collect(),
+            animations,
         )
     }
 
@@ -181,6 +182,7 @@ impl Game {
             players,
             phase: GamePhase::Programming(repeat(None).take(players_n).collect()),
             name,
+            animations: Vec::new(),
             damage_piles: DamagePiles {
                 spam: 30,
                 worm: 15,
@@ -190,10 +192,32 @@ impl Game {
         })
     }
 
-    pub async fn notify_update(&self) {
-        let futures = self.players.iter().enumerate().map(|(i, player)| {
-            player.send_message(ServerMessage::SetState(self.get_state_for_player(i)))
-        });
+    pub async fn notify_update(&mut self) {
+        let animations = mem::take(&mut self.animations);
+        let connections: Vec<_> = self
+            .players
+            .iter()
+            .enumerate()
+            .map(|(i, player)| (i, player.connected.upgrade()))
+            // separate collect to satisfy borrow rules
+            .collect();
+        let futures = connections
+            .into_iter()
+            // two separate map closures to avoid using self in async
+            .filter_map(|(i, conn_opt)| {
+                if let Some(conn) = conn_opt {
+                    Some((conn, self.get_state_for_player(i, animations.clone())))
+                } else {
+                    None
+                }
+            })
+            .map(async move |(conn, msg)| {
+                conn.socket
+                    .write()
+                    .await
+                    .send_message(ServerMessage::SetState(msg))
+                    .await;
+            });
         join_all(futures).await;
     }
 
@@ -214,7 +238,11 @@ impl Game {
             .map(|(p_i, _)| p_i)
             .collect();
         for player2_i in need_move {
-            self.force_move_to(player2_i, pushing_direction.apply(&pos), pushing_direction);
+            self.force_move_to(
+                player2_i,
+                pushing_direction.apply_to(&pos),
+                pushing_direction,
+            );
         }
         self.players
             .get_mut(player_i)
@@ -225,11 +253,14 @@ impl Game {
 
     fn reboot(&mut self, player_i: usize) {
         let reboot_token = self.map.reboot_token;
-        let player_state = &mut self.players.get_mut(player_i).unwrap().public_state;
-        player_state.direction = reboot_token.1;
-        player_state.is_rebooting = true;
+        let player = self.players.get_mut(player_i).unwrap();
+        player.draw_spam(&mut self.damage_piles);
+        player.draw_spam(&mut self.damage_piles);
+        player.public_state.direction = reboot_token.1;
+        player.public_state.is_rebooting = true;
+
         // temporarily move them away, to prevent collisions with players pushed during reboot
-        player_state.position.x = usize::MAX;
+        player.public_state.position.x = usize::MAX;
         self.force_move_to(player_i, reboot_token.0, reboot_token.1);
     }
 
@@ -251,7 +282,7 @@ impl Game {
                 debug!("There's a wall on source tile");
                 return MoveResult::DidntMove;
             }
-            target_pos = direction.apply(&origin_pos);
+            target_pos = direction.apply_to(&origin_pos);
             let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
                 debug!("Falling out from map");
                 // falling into void
@@ -510,8 +541,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
     loop {
         let register;
         let register_phase;
-        let player_i_sorted_by_priority;
-        {
+        let player_i_sorted_by_priority = {
             let game = game_arc.read().await;
             match &game.phase {
                 GamePhase::Moving {
@@ -524,26 +554,31 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 }
                 _ => panic!("Invalid state"),
             };
-            let mut active_players: Vec<usize> = game
-                .players
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| !p.public_state.is_rebooting)
-                .map(|(i, _)| i)
-                .collect();
-            active_players.sort_by_key(|i| AntennaDist {
+            let mut players_numbers: Vec<usize> = (0..game.players.len()).collect();
+            players_numbers.sort_by_key(|i| AntennaDist {
                 me: unsafe { game.players.get_unchecked(*i) }
                     .public_state
                     .position,
                 antenna: game.map.antenna,
             });
-            player_i_sorted_by_priority = active_players;
-        }
+            players_numbers
+        };
         debug!("Executing phase {}.{:?}", register, register_phase);
         let next_register_phase = match register_phase {
             PlayerCards => {
                 notify_sleep(&mut game_arc).await;
                 for player_i in player_i_sorted_by_priority {
+                    if game_arc
+                        .read()
+                        .await
+                        .players
+                        .get(player_i)
+                        .unwrap()
+                        .public_state
+                        .is_rebooting
+                    {
+                        continue;
+                    }
                     execute_card(Arc::clone(&game_arc), player_i, register).await;
                 }
                 FastBelts
@@ -675,7 +710,46 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 RobotLasers
             }
             RobotLasers => {
-                //todo robot lasers
+                for player_i in player_i_sorted_by_priority {
+                    let mut guard = game_arc.write().await;
+                    let game = &mut *guard;
+                    let player_state = game.players.get(player_i).unwrap().public_state;
+                    let bullet_dir = player_state.direction;
+                    let start_pos = player_state.position;
+                    let mut bullet_pos = start_pos;
+                    let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();
+                    'bullet_flight: loop {
+                        // wall on the tile we're leaving?
+                        if tile.walls.get(&bullet_dir) {
+                            break;
+                        }
+                        bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                        tile = match game.map.tiles.get(bullet_pos.x, bullet_pos.y) {
+                            // out of map
+                            None => break,
+                            Some(t) => *t,
+                        };
+                        // wall on the tile we're entering?
+                        if tile.walls.get(&bullet_dir.rotated().rotated()) {
+                            break;
+                        }
+                        for player2 in game.players.iter_mut() {
+                            if player2.public_state.position == bullet_pos {
+                                debug!(
+                                    "PLayer {} shot player {:?}",
+                                    player_i,
+                                    player2.connected.upgrade().map(|c| c.name.clone())
+                                );
+                                player2.draw_spam(&mut game.damage_piles);
+                                game.animations
+                                    .push(Animation::BulletFlight(start_pos, bullet_pos));
+                                drop(guard);
+                                notify_sleep(&mut game_arc).await;
+                                break 'bullet_flight;
+                            }
+                        }
+                    }
+                }
                 Checkpoints
             }
             Checkpoints => {
@@ -772,6 +846,6 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
 
 /// Asking for a mutable `game_arc` reference to help check that it isn't borrowed anywhere
 async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
-    game_arc.read().await.notify_update().await;
+    game_arc.write().await.notify_update().await;
     sleep(Duration::from_secs(1)).await;
 }

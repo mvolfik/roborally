@@ -52,7 +52,7 @@ impl Direction {
     }
 
     // Return position 1 tile to <Self>
-    pub fn apply(&self, Position { x, y }: &Position) -> Position {
+    pub fn apply_to(&self, Position { x, y }: &Position) -> Position {
         match self {
             Direction::Up => Position {
                 x: *x,
