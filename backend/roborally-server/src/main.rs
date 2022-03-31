@@ -206,7 +206,7 @@ async fn main() {
         .and(create_games_state())
         .then(socket_connect_handler);
 
-    let static_files = warp::fs::dir("../roborally-frontend/dist");
+    let static_files = warp::fs::dir("www");
 
     let routes = list_games
         .or(list_maps)
