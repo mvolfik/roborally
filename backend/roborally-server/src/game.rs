@@ -751,6 +751,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                         player.discard_pile.extend(player_programmed);
                         player.discard_pile.extend(mem::take(&mut player.hand));
                         player.hand = player.draw_n(9);
+                        player.public_state.is_rebooting = false;
                     }
                     game.phase =
                         GamePhase::Programming(repeat(None).take(game.players.len()).collect());
