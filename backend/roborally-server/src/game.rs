@@ -293,7 +293,7 @@ impl Game {
         };
         debug!("Moving");
         if should_reboot {
-            self.reboot(player_i)
+            self.reboot(player_i);
         } else {
             self.players
                 .get_mut(player_i)
