@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -121,6 +121,23 @@ impl PlayerConnection {
             game.notify_update().await;
             conn
         };
+        let self_arc2 = Arc::clone(&self_arc);
+        tokio::task::spawn(async move {
+            loop {
+                if let Err(e) = self_arc2
+                    .socket
+                    .write()
+                    .await
+                    .0
+                    .send(Message::ping([]))
+                    .await
+                {
+                    warn!("Error sending ping: {}", e);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(15)).await;
+            }
+        });
         tokio::task::spawn(async move {
             while let Some(msg) = match receive_client_message(&mut reader).await {
                 Err(err_opt) => {
