@@ -15,6 +15,7 @@
 #![feature(const_precise_live_drops)]
 #![feature(thread_id_value)]
 
+pub mod animations;
 pub mod card;
 pub mod game_map;
 pub mod game_state;
@@ -24,4 +25,3 @@ pub mod tile;
 pub mod tile_type;
 pub mod transform;
 pub mod transport;
-pub mod animations;

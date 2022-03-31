@@ -194,22 +194,19 @@ impl Game {
 
     pub async fn notify_update(&mut self) {
         let animations = mem::take(&mut self.animations);
+        // we need a separate map and collect to satisfy `self` borrow rules
+        #[allow(clippy::needless_collect)]
         let connections: Vec<_> = self
             .players
             .iter()
             .enumerate()
             .map(|(i, player)| (i, player.connected.upgrade()))
-            // separate collect to satisfy borrow rules
             .collect();
         let futures = connections
             .into_iter()
-            // two separate map closures to avoid using self in async
+            // two separate closures to avoid using self in async (again, borrow rules)
             .filter_map(|(i, conn_opt)| {
-                if let Some(conn) = conn_opt {
-                    Some((conn, self.get_state_for_player(i, animations.clone())))
-                } else {
-                    None
-                }
+                conn_opt.map(|conn| (conn, self.get_state_for_player(i, animations.clone())))
             })
             .map(async move |(conn, msg)| {
                 conn.socket
@@ -733,7 +730,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                         if tile.walls.get(&bullet_dir.rotated().rotated()) {
                             break;
                         }
-                        for player2 in game.players.iter_mut() {
+                        for player2 in &mut game.players {
                             if player2.public_state.position == bullet_pos {
                                 debug!(
                                     "PLayer {} shot player {:?}",

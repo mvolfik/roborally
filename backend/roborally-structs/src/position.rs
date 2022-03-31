@@ -59,11 +59,11 @@ impl Direction {
                 y: y.wrapping_sub(1),
             },
             Direction::Right => Position { x: x + 1, y: *y },
-            Direction::Down => Position {
-                x: *x,
-                y: y + 1,
+            Direction::Down => Position { x: *x, y: y + 1 },
+            Direction::Left => Position {
+                x: x.wrapping_sub(1),
+                y: *y,
             },
-            Direction::Left => Position { x: x.wrapping_sub(1), y: *y },
         }
     }
 }
