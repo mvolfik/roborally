@@ -31,6 +31,7 @@
 #![feature(never_type)]
 #![feature(label_break_value)]
 #![feature(let_chains)]
+#![feature(is_some_with)]
 
 mod game;
 mod game_connection;

@@ -19,6 +19,7 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 - spawn points are assigned randomly (no player choice)
 - running out of SPAM cards isn't supported (yet) (no player choice)
 - reboot token has set orientation (no player choice)
+  - a drawback of this is that there's now a risk of entering an infinite reboot cycle
 - belt movements also sorted by priority antenna (no move-to-same-tile edge-case)
 - programming Again after damage card re-executes the substitute action,
   doesn't draw another card (why would anyone ever program cards like that anyway)

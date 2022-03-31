@@ -119,6 +119,12 @@ pub enum GamePhase {
     HasWinner(usize),
 }
 
+#[derive(PartialEq, Eq)]
+enum MoveResult {
+    DidntMove,
+    Moved { rebooted: bool },
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Game {
@@ -191,47 +197,72 @@ impl Game {
         join_all(futures).await;
     }
 
+    fn force_move_to(&mut self, player_i: usize, pos: Position, pushing_direction: Direction) {
+        if !self
+            .map
+            .tiles
+            .get(pos.x, pos.y)
+            .is_some_and(|tile| tile.typ != TileType::Void)
+        {
+            panic!("Infinite reboot cycle entered");
+        }
+        let need_move: Vec<_> = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.public_state.position == pos)
+            .map(|(p_i, _)| p_i)
+            .collect();
+        for player2_i in need_move {
+            self.force_move_to(player2_i, pushing_direction.apply(&pos), pushing_direction);
+        }
+        self.players
+            .get_mut(player_i)
+            .unwrap()
+            .public_state
+            .position = pos;
+    }
+
     fn reboot(&mut self, player_i: usize) {
-        todo!()
+        let reboot_token = self.map.reboot_token;
+        let player_state = &mut self.players.get_mut(player_i).unwrap().public_state;
+        player_state.direction = reboot_token.1;
+        // temporarily move them away, to prevent collisions with players pushed during reboot
+        player_state.position.x = usize::MAX;
+        self.force_move_to(player_i, reboot_token.0, reboot_token.1);
     }
 
     /// returns value:
     /// None => failed to move
     /// Some(vec) => moved, vec contains `player_i` of each player that was moved (in case of pushing train)
-    fn mov(
-        &mut self,
-        player_i: usize,
-        push: bool,
-        dir_opt: Option<Direction>,
-    ) -> Option<Vec<usize>> {
+    fn mov(&mut self, player_i: usize, push: bool, dir_opt: Option<Direction>) -> MoveResult {
         debug!("Attempting to move player {}", player_i);
         let player = self.players.get(player_i).unwrap();
         let origin_pos = player.public_state.position;
         let target_pos;
-        let mut pushed_if_success = vec![player_i];
         // fall through or break 'checks => can move
-        'checks: {
+        let should_reboot = 'checks: {
             let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
-                return None;
+                return MoveResult::DidntMove;
             };
             let direction = dir_opt.unwrap_or(player.public_state.direction);
             if origin_tile.walls.get(&direction) {
                 debug!("There's a wall on source tile");
-                return None;
+                return MoveResult::DidntMove;
             }
             target_pos = direction.apply(&origin_pos);
             let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
                 debug!("Falling out from map");
                 // falling into void
-                break 'checks;
+                break 'checks true;
             };
             if target_tile.walls.get(&direction.rotated().rotated()) {
                 debug!("There's a wall on target tile");
-                return None;
+                return MoveResult::DidntMove;
             }
             if target_tile.typ == TileType::Void {
                 debug!("Falling into a void");
-                break 'checks;
+                break 'checks true;
             }
             // this separate extraction into a Vec is necessary to satisfy borrow rules
             let players_in_way: Vec<_> = self
@@ -251,22 +282,28 @@ impl Game {
                 debug!("There's a player in the way");
                 if !push {
                     debug!("Can't push, aborting");
-                    return None;
+                    return MoveResult::DidntMove;
                 }
                 match self.mov(*player2_i, true, Some(direction)) {
-                    None => return None,
-                    Some(pushed) => pushed_if_success.extend(pushed),
+                    MoveResult::DidntMove => return MoveResult::DidntMove,
+                    MoveResult::Moved { rebooted: _ } => {}
                 }
-                debug!("Pushed 'em");
             }
-        }
+            false
+        };
         debug!("Moving");
-        self.players
-            .get_mut(player_i)
-            .unwrap()
-            .public_state
-            .position = target_pos;
-        Some(pushed_if_success)
+        if should_reboot {
+            self.reboot(player_i)
+        } else {
+            self.players
+                .get_mut(player_i)
+                .unwrap()
+                .public_state
+                .position = target_pos;
+        }
+        MoveResult::Moved {
+            rebooted: should_reboot,
+        }
     }
 
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
@@ -381,13 +418,14 @@ fn execute_card(
             }
             Worm => {
                 game.damage_piles.worm += 1;
+                // even though the card won't be played, we need to set it to move the worm out of the deck
                 *card = player.draw_one();
-                // move out of bounds = reboot
-                player.public_state.position.x = usize::MAX;
+                game.reboot(player_i);
                 drop(guard);
-                after_move(&mut game_arc, &[player_i]).await;
+                notify_sleep(&mut game_arc).await;
             }
             Virus => todo!(),
+
             Trojan => {
                 game.damage_piles.trojan += 1;
                 player.draw_spam(&mut game.damage_piles);
@@ -398,40 +436,37 @@ fn execute_card(
                 execute_card(game_arc, player_i, register_i).await;
             }
             Move1 => {
-                let moved = game.mov(player_i, true, None);
+                game.mov(player_i, true, None);
                 drop(guard);
-                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                notify_sleep(&mut game_arc).await;
             }
             Move2 => {
                 let moved = game.mov(player_i, true, None);
-                let did_move = moved.is_some();
                 drop(guard);
-                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
-                if did_move {
-                    let moved2 = game_arc.write().await.mov(player_i, true, None);
-                    after_move(&mut game_arc, moved2.unwrap_or_default().as_ref()).await;
+                notify_sleep(&mut game_arc).await;
+                if moved == (MoveResult::Moved { rebooted: false }) {
+                    game_arc.write().await.mov(player_i, true, None);
+                    notify_sleep(&mut game_arc).await;
                 }
             }
             Move3 => {
                 let moved = game.mov(player_i, true, None);
-                let did_move = moved.is_some();
                 drop(guard);
-                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
-                if did_move {
+                notify_sleep(&mut game_arc).await;
+                if moved == (MoveResult::Moved { rebooted: false }) {
                     let moved2 = game_arc.write().await.mov(player_i, true, None);
-                    let did_move2 = moved2.is_some();
-                    after_move(&mut game_arc, moved2.unwrap_or_default().as_ref()).await;
-                    if did_move2 {
-                        let moved3 = game_arc.write().await.mov(player_i, true, None);
-                        after_move(&mut game_arc, moved3.unwrap_or_default().as_ref()).await;
+                    notify_sleep(&mut game_arc).await;
+                    if moved2 == (MoveResult::Moved { rebooted: false }) {
+                        game_arc.write().await.mov(player_i, true, None);
+                        notify_sleep(&mut game_arc).await;
                     }
                 }
             }
             Reverse1 => {
                 let dir = player.public_state.direction.rotated().rotated();
-                let moved = game.mov(player_i, true, Some(dir));
+                game.mov(player_i, true, Some(dir));
                 drop(guard);
-                after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                notify_sleep(&mut game_arc).await;
             }
             TurnRight => {
                 player.public_state.direction = player.public_state.direction.rotated();
@@ -522,7 +557,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                         {
                             debug!("Moving player {} on a fast belt", player_i);
                             let moved = game.mov(player_i, false, Some(dir));
-                            if moved.is_some() {
+                            if (moved == MoveResult::Moved { rebooted: false }) {
                                 match end {
                                     BeltEnd::Straight => {}
                                     BeltEnd::TurnLeft => {
@@ -549,7 +584,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                 }
                             }
                             drop(game);
-                            after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                            notify_sleep(&mut game_arc).await;
                         }
                     }
                 }
@@ -564,7 +599,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     {
                         debug!("Moving player {} on a slow belt", player_i);
                         let moved = game.mov(player_i, false, Some(dir));
-                        if moved.is_some() {
+                        if (moved == MoveResult::Moved { rebooted: false }) {
                             match end {
                                 BeltEnd::Straight => {}
                                 BeltEnd::TurnLeft => {
@@ -582,7 +617,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                             }
                         }
                         drop(game);
-                        after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                        notify_sleep(&mut game_arc).await;
                     }
                 }
                 PushPanels
@@ -596,9 +631,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     {
                         if *active.get(register).unwrap() {
                             debug!("Moving player {} from a push panel", player_i);
-                            let moved = game.mov(player_i, true, Some(dir));
+                            game.mov(player_i, true, Some(dir));
                             drop(game);
-                            after_move(&mut game_arc, &moved.unwrap_or_default()).await;
+                            notify_sleep(&mut game_arc).await;
                         }
                     }
                 }
@@ -737,25 +772,4 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
 async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
     game_arc.read().await.notify_update().await;
     sleep(Duration::from_secs(1)).await;
-}
-
-async fn after_move(game_arc: &mut Arc<RwLock<Game>>, _moved_players: &[usize]) {
-    notify_sleep(game_arc).await;
-    /*
-    todo: reboot if out of bounds
-
-    this will have to be well thought-out:
-    - requires access to whole game board
-    - as a result of rebooting, already-rebooting players can be moved
-        - another reboot of that player should, however, result in a panic, since that would get us into a loop
-    - reboot can happen:
-        - after belt move (that's easy even for fast belts, as second belt move doesn't change position if we're not above a belt anymore)
-        - push panel (1-step, easy)
-        - by playing a card:
-            - move card
-            - virus
-        - by getting pushed
-
-    Instinctively, I think I'd implement reboot in
-    */
 }
