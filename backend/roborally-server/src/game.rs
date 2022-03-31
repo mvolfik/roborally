@@ -711,6 +711,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     let mut guard = game_arc.write().await;
                     let game = &mut *guard;
                     let player_state = game.players.get(player_i).unwrap().public_state;
+                    if player_state.is_rebooting {
+                        continue;
+                    }
                     let bullet_dir = player_state.direction;
                     let start_pos = player_state.position;
                     let mut bullet_pos = start_pos;

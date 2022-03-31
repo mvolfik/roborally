@@ -26,8 +26,7 @@
 
   function processBullet(from: Position, to: Position) {
     const bullet = document.createElement("img");
-    // bullet.src = new URL("../assets/bullet.png", import.meta.url);
-    bullet.src = new URL("http://placekitten.com/20/10");
+    bullet.src = new URL("../assets/bullet.png", import.meta.url);
     bullet.style = `
       position: absolute;
       left: ${(from.x + 0.5) * 64}px;
