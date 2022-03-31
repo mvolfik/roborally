@@ -46,41 +46,27 @@ pub struct PlayerConnection {
 
 async fn receive_client_message(
     reader: &mut SplitStream<WebSocket>,
-    writer: &mut SocketWriter,
-) -> Option<ClientMessage> {
+) -> Result<ClientMessage, Option<String>> {
     loop {
         // if None, the connection is already closed. In all other cases, do close_with_notice and return None
-        let ws_msg = match reader.next().await? {
+        let ws_msg = match reader.next().await.ok_or(None)? {
             Ok(x) => x,
-            Err(e) => {
-                writer
-                    .close_with_notice(format!("Error receiving message: {}", e))
-                    .await;
-                break None;
-            }
+            Err(e) => break Err(Some(format!("Error receiving message: {}", e))),
         };
         break (
             // this would be cleaner as recursion, but that is messy with async function
             if ws_msg.is_close() {
-                None
+                Err(None)
             } else if ws_msg.is_pong() || ws_msg.is_ping() {
                 // recursion
                 continue;
             } else if ws_msg.is_binary() {
                 match rmp_serde::from_slice(ws_msg.as_bytes()) {
-                    Ok(msg) => Some(msg),
-                    Err(e) => {
-                        writer
-                            .close_with_notice(format!("Received corrupted message: {}", e))
-                            .await;
-                        None
-                    }
+                    Ok(msg) => Ok(msg),
+                    Err(e) => Err(Some(format!("Received corrupted message: {}", e))),
                 }
             } else {
-                writer
-                    .close_with_notice("Received corrupted message (unknown type)".to_owned())
-                    .await;
-                None
+                Err(Some("Received corrupted message (unknown type)".to_owned()))
             }
         );
     }
@@ -95,12 +81,15 @@ impl PlayerConnection {
             return;
         };
 
-        let (player_name, seat) = match receive_client_message(&mut reader, &mut writer).await {
-            None => {
+        let (player_name, seat) = match receive_client_message(&mut reader).await {
+            Err(err_opt) => {
+                if let Some(e) = err_opt {
+                    writer.close_with_notice(e).await;
+                }
                 return;
             }
-            Some(ClientMessage::Init { name, seat }) => (name, seat),
-            Some(_other) => {
+            Ok(ClientMessage::Init { name, seat }) => (name, seat),
+            Ok(_other) => {
                 writer
                     .close_with_notice("Unexpected message type (server/client desync)".to_owned())
                     .await;
@@ -133,9 +122,15 @@ impl PlayerConnection {
             conn
         };
         tokio::task::spawn(async move {
-            while let Some(msg) =
-                receive_client_message(&mut reader, &mut *self_arc.socket.write().await).await
-            {
+            while let Some(msg) = match receive_client_message(&mut reader).await {
+                Err(err_opt) => {
+                    if let Some(e) = err_opt {
+                        self_arc.socket.write().await.close_with_notice(e).await;
+                    }
+                    None
+                }
+                Ok(msg) => Some(msg),
+            } {
                 match msg {
                     ClientMessage::Program(cards) => {
                         let res = self_arc

@@ -227,6 +227,7 @@ impl Game {
         let reboot_token = self.map.reboot_token;
         let player_state = &mut self.players.get_mut(player_i).unwrap().public_state;
         player_state.direction = reboot_token.1;
+        player_state.is_rebooting = true;
         // temporarily move them away, to prevent collisions with players pushed during reboot
         player_state.position.x = usize::MAX;
         self.force_move_to(player_i, reboot_token.0, reboot_token.1);
