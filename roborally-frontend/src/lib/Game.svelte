@@ -52,6 +52,7 @@
           connection.addEventListener("message", mainHandler);
         } catch (e) {
           alert(e);
+          eventSource("disconnect");
         }
       },
       { once: true }

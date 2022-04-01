@@ -161,7 +161,7 @@ fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
 async fn main() {
     logging::init();
     let games: Games = Games::default();
-    let maps: Maps = Arc::new(load_maps!["test.csv"]);
+    let maps: Maps = Arc::new(load_maps!["test.csv", "Dodge this"]);
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
     let create_games_state = move || {

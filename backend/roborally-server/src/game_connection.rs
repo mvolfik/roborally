@@ -183,8 +183,8 @@ impl PlayerConnection {
                         break;
                     }
                 }
-                info!("Ending receive loop for player {}", self_arc.name);
             }
+            info!("Ending receive loop for player {}", self_arc.name);
         });
     }
 }
