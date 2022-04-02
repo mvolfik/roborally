@@ -340,9 +340,6 @@ impl Game {
         let GamePhase::Programming(vec) = &mut self.phase else {
             return Err("Programming phase isn't active right now".to_owned());
         };
-        if *cards.first().unwrap() == Card::Again {
-            return Err("Can't program Again in first slot".to_owned());
-        }
         let my_programmed_ref = match vec.get_mut(seat).unwrap() {
             Some(_) => {
                 return Err("You have already programmed your cards for this round".to_owned());
@@ -514,8 +511,18 @@ fn execute_card(
                 notify_sleep(&mut game_arc).await;
             }
             Again => {
-                drop(guard);
-                execute_card(game_arc, player_i, register_i - 1).await;
+                if register_i == 0 {
+                    let replacement_card = player.draw_one();
+                    player
+                        .discard_pile
+                        .push(mem::replace(card, replacement_card));
+                    drop(guard);
+                    notify_sleep(&mut game_arc).await;
+                    execute_card(game_arc, player_i, register_i).await;
+                } else {
+                    drop(guard);
+                    execute_card(game_arc, player_i, register_i - 1).await;
+                }
             }
         }
     }

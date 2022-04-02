@@ -27,5 +27,3 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 - programming Again after damage card re-executes the substitute action,
   doesn't draw another card (why would anyone ever program cards like that anyway)
 - board lasers are always only 1-hit
-
-- todo: if you program SPAM in first register, it is possible to draw Again, in which case the program would panic. therefore I need to implement a new behavior: Again is allowed to be programmed in the first register, but acts like a SPAM card - draws a new card and executes it.
