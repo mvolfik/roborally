@@ -38,7 +38,7 @@ mod game;
 mod game_connection;
 mod parser;
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use futures::future::join_all;
 use game::Game;
@@ -47,15 +47,14 @@ use http::StatusCode;
 use rand::random;
 use roborally_structs::{game_map::GameMap, logging};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time::Instant};
 use warp::{reply::with_status, Filter, Reply};
 
 async fn socket_connect_handler(game_id: u64, ws: warp::ws::Ws, games_lock: Games) -> impl Reply {
-    let game = games_lock
-        .read()
-        .await
-        .get(&game_id)
-        .map(|x| Arc::clone(&x.1));
+    let game = games_lock.write().await.get_mut(&game_id).map(|entry| {
+        entry.last_nobody_connected = None;
+        Arc::clone(&entry.game)
+    });
     ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
@@ -78,7 +77,7 @@ async fn new_game_handler(
     let Some(map) = maps.get(&map_name) else {
         return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST)
     };
-    let game = match Game::new(map.clone(), players, name) {
+    let game = match Game::new(map.clone(), players) {
         Ok(g) => g,
         Err(e) => return with_status(e, StatusCode::BAD_REQUEST),
     };
@@ -91,7 +90,15 @@ async fn new_game_handler(
                 id = random();
             }
         }
-        games.insert(id, (map_name, Arc::new(RwLock::new(game))));
+        games.insert(
+            id,
+            GameIndexEntry {
+                name,
+                map_name,
+                last_nobody_connected: Some(Instant::now()),
+                game: Arc::new(RwLock::new(game)),
+            },
+        );
     }
     with_status(id.to_string(), StatusCode::CREATED)
 }
@@ -106,26 +113,32 @@ struct GameListItem {
 
 async fn list_games_handler(games_lock: Games) -> impl Reply {
     let games = games_lock.read().await;
-    let futures: Vec<_> = games
+    let futures = games
         .iter()
-        .map(async move |(id, (map_name, game_lock))| {
-            let game = game_lock.read().await;
-            GameListItem {
-                id: id.to_string(),
-                seats: game
-                    .players
-                    .iter()
-                    .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
-                    .collect(),
-                map_name: map_name.clone(),
-                name: game.name.clone(),
-            }
-        })
-        .collect();
+        .map(async move |(id, index_entry)| GameListItem {
+            id: id.to_string(),
+            seats: index_entry
+                .game
+                .read()
+                .await
+                .players
+                .iter()
+                .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
+                .collect(),
+            map_name: index_entry.map_name.clone(),
+            name: index_entry.name.clone(),
+        });
     warp::reply::json(&join_all(futures).await)
 }
 
-type Games = Arc<RwLock<HashMap<u64, (String, Arc<RwLock<Game>>)>>>;
+struct GameIndexEntry {
+    name: String,
+    map_name: String,
+    last_nobody_connected: Option<Instant>,
+    game: Arc<RwLock<Game>>,
+}
+
+type Games = Arc<RwLock<HashMap<u64, GameIndexEntry>>>;
 type Maps = Arc<HashMap<String, GameMap>>;
 
 macro_rules! load_maps {
@@ -161,16 +174,16 @@ fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
 #[tokio::main]
 async fn main() {
     logging::init();
-    let games: Games = Games::default();
+    let games_lock: Games = Games::default();
     let maps: Maps = Arc::new(load_maps!["Test", "Dodge this", "Chop shop challenge"]);
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
-    let create_games_state = move || {
-        let arc = Arc::clone(&games);
+    let create_games_state = || {
+        let arc = Arc::clone(&games_lock);
         warp::any().map(move || Arc::clone(&arc))
     };
 
-    let create_maps_state = move || {
+    let create_maps_state = || {
         let arc = Arc::clone(&maps);
 
         warp::any().map(move || Arc::clone(&arc))
@@ -223,6 +236,41 @@ async fn main() {
         None => ([127, 0, 0, 1], 8080),
     };
     let server = warp::serve(routes).run(ip_port);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let mut games = games_lock.write().await;
+            let to_remove = games.iter_mut().map(async move |(id, index_entry)| {
+                if index_entry.game
+                    .read()
+                    .await
+                    .players
+                    .iter()
+                    .any(|p| p.connected.strong_count() > 0)
+                {
+                    None
+                } else {
+                    if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
+                        if Instant::now().duration_since(last_nobody_connected)
+                            > Duration::from_secs(60)
+                        {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        index_entry.last_nobody_connected = Some(Instant::now());
+                        None
+                    }
+                }
+            });
+            for id_opt in join_all(to_remove).await {
+                if let Some(id) = id_opt {
+                    games.remove(&id);
+                }
+            }
+        }
+    });
     eprintln!("Running at {:?}", ip_port);
     server.await;
 }

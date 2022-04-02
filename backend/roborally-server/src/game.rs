@@ -121,7 +121,6 @@ pub struct Game {
     pub map: GameMap,
     pub players: Vec<Player>,
     pub phase: GamePhase,
-    pub name: String,
     pub animations: Vec<Animation>,
 }
 
@@ -164,7 +163,7 @@ impl Game {
         )
     }
 
-    pub fn new(map: GameMap, players_n: usize, name: String) -> Result<Self, String> {
+    pub fn new(map: GameMap, players_n: usize) -> Result<Self, String> {
         if map.spawn_points.len() < players_n {
             return Err("Not enough spawn points on map".to_owned());
         }
@@ -175,7 +174,6 @@ impl Game {
             map,
             players,
             phase: GamePhase::Programming(repeat(None).take(players_n).collect()),
-            name,
             animations: Vec::new(),
         })
     }

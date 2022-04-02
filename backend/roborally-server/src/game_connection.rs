@@ -122,7 +122,7 @@ impl PlayerConnection {
             conn
         };
         let self_arc2 = Arc::clone(&self_arc);
-        tokio::task::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 if let Err(e) = self_arc2
                     .socket
@@ -138,7 +138,7 @@ impl PlayerConnection {
                 tokio::time::sleep(Duration::from_secs(15)).await;
             }
         });
-        tokio::task::spawn(async move {
+        tokio::spawn(async move {
             while let Some(msg) = match receive_client_message(&mut reader).await {
                 Err(err_opt) => {
                     if let Some(e) = err_opt {
