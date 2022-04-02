@@ -192,6 +192,17 @@ impl PlayerGameStateView {
             }
         }
     }
+
+    pub fn get_winner_name(&self) -> Option<String> {
+        if let GamePhaseView::HasWinner(player_i) = &self.phase {
+            Some(match self.player_names.get(*player_i).cloned().flatten() {
+                None => format!("Player {}", player_i),
+                Some(name) => name,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(feature = "client")]

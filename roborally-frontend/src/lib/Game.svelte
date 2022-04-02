@@ -74,7 +74,7 @@
   });
 
   let eventSource = createEventDispatcher();
-  $: console.log($stateStore);
+  $: phase = $stateStore?.phase;
 </script>
 
 <div
@@ -87,16 +87,14 @@
     <div class="map">
       <Map {map} {stateStore} />
     </div>
-    {#key $stateStore.phase === GamePhase.Moving}
+    {#key phase === GamePhase.Moving}
       <div class="phase-indicator" transition:fly={{ x: -200 }}>
-        <div>
-          Current phase: {$stateStore.phase === GamePhase.Moving
-            ? "Moving"
-            : "Programming"}
-        </div>
-        {#if $stateStore.phase === GamePhase.Moving}
+        {#if phase === GamePhase.HasWinner}
+          <div>Game won by {$stateStore.get_winner_name()}</div>
+        {:else if phase === GamePhase.Moving}
           <div>
-            Current register: {$stateStore.moving_phase_register_number + 1}
+            Executing movement register: {$stateStore.moving_phase_register_number +
+              1}
           </div>
           <div
             class="register-move-phase-indicator"
@@ -112,10 +110,12 @@
             <span>Robot lasers</span>
             <span>Checkpoints</span>
           </div>
+        {:else}
+          <div>Program your cards for the next round!</div>
         {/if}
       </div>
     {/key}
-    {#if $stateStore.phase === GamePhase.Programming}
+    {#if phase === GamePhase.Programming}
       <div class="programmer" transition:fly={{ y: 200 }}>
         <Programmer
           initialCards={[...Array($stateStore.hand_len)].map((_, i) =>
@@ -124,7 +124,7 @@
           on:programmingDone={handleProgrammingDone}
         />
       </div>
-    {:else}
+    {:else if phase !== GamePhase.HasWinner}
       <div class="my-registers" transition:fly={{ y: 200 }}>
         <span>Your programmed cards</span>
         {#each [...Array(5)].map( (_, i) => $stateStore.get_my_register_card(i) ) as card}
@@ -132,7 +132,7 @@
         {/each}
       </div>
     {/if}
-    {#key $stateStore.phase == GamePhase.Moving}
+    {#key phase === GamePhase.Moving}
       <div class="player-infoboxes" transition:fly={{ x: 100 }}>
         {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player, player_i}
           {@const name = player.name}
@@ -152,7 +152,7 @@
                 <div class="indicator" class:true={checkpoint_reached} />
               {/each}
             </div>
-            {#if $stateStore.phase == GamePhase.Moving}
+            {#if phase === GamePhase.Moving}
               <img
                 src={getCardAsset(
                   $stateStore.get_player_card_for_current_register(player_i)
@@ -160,7 +160,7 @@
                 )}
                 alt="Card"
               />
-            {:else}
+            {:else if phase !== GamePhase.HasWinner}
               <div>
                 Ready: <div
                   class="indicator"
