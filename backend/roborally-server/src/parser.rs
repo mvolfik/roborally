@@ -105,7 +105,7 @@ impl Parse for BeltEnd {
 
 impl<T: Parse> Parse for Vec<T> {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
-        if value == "" {
+        if value.is_empty() {
             Ok(Vec::new())
         } else {
             value
@@ -491,7 +491,7 @@ impl Parse for GameMap {
                 ],
             )?;
 
-            if props.len() > 0 {
+            if !props.is_empty() {
                 return Err(format_parse_error(
                     name,
                     "extra props in header",

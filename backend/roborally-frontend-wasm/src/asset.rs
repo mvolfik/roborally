@@ -212,7 +212,7 @@ impl From<GameMap> for AssetMap {
                     rotate: dir.get_rotation(),
                     ..Transform::default()
                 },
-            })
+            });
         }
 
         Self {
