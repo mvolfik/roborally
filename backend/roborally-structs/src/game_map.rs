@@ -14,6 +14,7 @@ pub struct GameMap {
     pub reboot_token: (Position, Direction),
     pub checkpoints: Vec<Position>,
     pub spawn_points: Vec<(Position, Direction)>,
+    pub lasers: Vec<(Position, Direction)>,
 }
 
 impl std::fmt::Debug for GameMap {

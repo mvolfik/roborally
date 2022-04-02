@@ -105,11 +105,15 @@ impl Parse for BeltEnd {
 
 impl<T: Parse> Parse for Vec<T> {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
-        value
-            .split(';')
-            .enumerate()
-            .map(|(i, item)| T::parse(item, &format!("{}[{}]", name, i)))
-            .collect()
+        if value == "" {
+            Ok(Vec::new())
+        } else {
+            value
+                .split(';')
+                .enumerate()
+                .map(|(i, item)| T::parse(item, &format!("{}[{}]", name, i)))
+                .collect()
+        }
     }
 }
 
@@ -186,25 +190,6 @@ impl Parse for TileType {
                     ))
                 }
             },
-            // #[allow(clippy::cast_possible_truncation)]
-            // Some('L') => Lasers(
-            //     Direction::parse(
-            //         &char_option_to_string(chars.next()),
-            //         &format!("{}.direction", name),
-            //     )?,
-            //     chars
-            //         .next()
-            //         .and_then(|c| {
-            //             if c == '0' {
-            //                 // disallow 0 lasers
-            //                 None
-            //             } else {
-            //                 c.to_digit(10)
-            //             }
-            //         })
-            //         .ok_or_else(|| format_parse_error(name, "invalid laser count", value))?
-            //         as u8,
-            // ),
             _ => {
                 return Err(format_parse_error(
                     name,
@@ -308,6 +293,7 @@ impl Parse for GameMap {
         let reboot_token: (Position, Direction);
         let checkpoints: Vec<Position>;
         let spawn_points: Vec<(Position, Direction)>;
+        let lasers: Vec<(Position, Direction)>;
 
         let mut props = HashMap::new();
         for propdef in lines
@@ -364,8 +350,6 @@ impl Parse for GameMap {
             .map_err(|e| format_parse_error(name, &e, &format!("{:?}", size)))?;
 
         {
-            let mut used_special_tiles: HashSet<Position> = HashSet::new();
-
             let mut is_in_bounds = |p: &Position| size.contains(*p);
             let mut faces_into_map = |(pos, dir): &(Position, Direction)| {
                 (pos.x > 0 || *dir != Direction::Left)
@@ -376,7 +360,10 @@ impl Parse for GameMap {
             let mut is_on_floor = |p: &Position| {
                 tiles.get(p.x as usize, p.y as usize).map(|x| x.typ) == Some(TileType::Floor)
             };
+
+            let mut used_special_tiles: HashSet<Position> = HashSet::new();
             let mut doesnt_overlap_other_special = |p: &Position| used_special_tiles.insert(*p);
+
             antenna = get_parsed_prop(
                 &mut props,
                 name,
@@ -477,13 +464,53 @@ impl Parse for GameMap {
                     ),
                 ],
             )?;
+
+            lasers = get_parsed_prop(
+                &mut props,
+                name,
+                "Lasers",
+                &mut [
+                    (
+                        &mut |ls: &Vec<(Position, Direction)>| {
+                            ls.iter().all(|(pos, _)| is_in_bounds(pos))
+                        },
+                        "all must be in map bounds",
+                    ),
+                    (
+                        &mut |ls: &Vec<(Position, Direction)>| {
+                            ls.iter().all(|(pos, _)| is_on_floor(pos))
+                        },
+                        "all must be placed on a floor tile",
+                    ),
+                    (
+                        &mut |ls: &Vec<(Position, Direction)>| {
+                            ls.iter().all(|(pos, _)| doesnt_overlap_other_special(pos))
+                        },
+                        "none can overlap other special tiles",
+                    ),
+                ],
+            )?;
+
+            if props.len() > 0 {
+                return Err(format_parse_error(
+                    name,
+                    "extra props in header",
+                    &props
+                        .into_iter()
+                        .map(|(k, v)| format!("{}: `{}`", k, v))
+                        .intersperse(", ".to_owned())
+                        .collect::<String>(),
+                ));
+            }
         }
+
         Ok(Self {
             tiles,
             antenna,
             reboot_token,
             checkpoints,
             spawn_points,
+            lasers,
         })
     }
 }

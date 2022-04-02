@@ -1,4 +1,4 @@
-Size=9,6 Antenna=0,4 Reboot=5,4:r Checkpoints=3,0;4,0 Spawnpoints=3,4:u;5,0:r
+Size=9,6 Antenna=0,4 Reboot=5,4:r Checkpoints=3,0;4,0 Spawnpoints=3,4:u;5,0:r Lasers=
 V:d;V;V;F;F;F;V;V;V:d
 Bsr;Bsr;Bsr;Bsrr;Bsd:u;Bsll;Bsl;Bsl;Bsl
 Bsur;V:ul;V:u;V:urd;Bfd;V:uld;V:u;V:ur;Bsul

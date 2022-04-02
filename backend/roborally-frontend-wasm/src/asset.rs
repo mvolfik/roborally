@@ -205,6 +205,16 @@ impl From<GameMap> for AssetMap {
             });
         }
 
+        for (pos, dir) in m.lasers {
+            assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
+                uri: intern("laser.png").to_owned(),
+                transform: Transform {
+                    rotate: dir.get_rotation(),
+                    ..Transform::default()
+                },
+            })
+        }
+
         Self {
             grid: assets,
             checkpoints: m.checkpoints.len(),

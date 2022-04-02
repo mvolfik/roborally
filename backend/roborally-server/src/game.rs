@@ -702,8 +702,49 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 }
                 Lasers
             }
+            // the code for lasers and robot lasers is mostly the same, but with one difference:
+            // - for robot lasers, we can't hit the tile we're starting on (you can't shoot yourself),
+            //   so we start the loop with "incrementing" bullet position (incl. wall checks)
+            // - for map lasers, the position increment is moved to the end of the loop, as we might
+            //   already hit a robot on the tile we're shooting from
             Lasers => {
-                // todo lasers
+                let lasers = game_arc.read().await.map.lasers.clone();
+                for (start_pos, bullet_dir) in lasers {
+                    let mut guard = game_arc.write().await;
+                    let game = &mut *guard;
+                    let mut bullet_pos = start_pos;
+                    let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();
+                    'map_bullet_flight: loop {
+                        for player2 in &mut game.players {
+                            if player2.public_state.position == bullet_pos {
+                                debug!(
+                                    "Laser shot player {:?}",
+                                    player2.connected.upgrade().map(|c| c.name.clone())
+                                );
+                                player2.draw_spam(&mut game.damage_piles);
+                                game.animations
+                                    .push(Animation::BulletFlight(start_pos, bullet_pos));
+                                drop(guard);
+                                notify_sleep(&mut game_arc).await;
+                                break 'map_bullet_flight;
+                            }
+                        }
+                        // wall on the tile we're leaving?
+                        if tile.walls.get(&bullet_dir) {
+                            break;
+                        }
+                        bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                        tile = match game.map.tiles.get(bullet_pos.x, bullet_pos.y) {
+                            // out of map
+                            None => break,
+                            Some(t) => *t,
+                        };
+                        // wall on the tile we're entering?
+                        if tile.walls.get(&bullet_dir.rotated().rotated()) {
+                            break;
+                        }
+                    }
+                }
                 RobotLasers
             }
             RobotLasers => {
@@ -718,7 +759,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     let start_pos = player_state.position;
                     let mut bullet_pos = start_pos;
                     let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();
-                    'bullet_flight: loop {
+                    'robot_bullet_flight: loop {
                         // wall on the tile we're leaving?
                         if tile.walls.get(&bullet_dir) {
                             break;
@@ -745,7 +786,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     .push(Animation::BulletFlight(start_pos, bullet_pos));
                                 drop(guard);
                                 notify_sleep(&mut game_arc).await;
-                                break 'bullet_flight;
+                                break 'robot_bullet_flight;
                             }
                         }
                     }

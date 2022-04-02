@@ -30,8 +30,6 @@ pub enum TileType {
     /// `R(cw|ccw)`
     /// bool = is_clockwise
     Rotation(bool),
-    // /// `L{dir}(1-9)`
-    // Lasers(Direction, u8),
 }
 
 impl Default for TileType {

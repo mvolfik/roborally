@@ -14,12 +14,18 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 ## Rule differences
 
 - no energy cubes & powerups
-- no board lasers (yet?)
 - 1 reboot token for whole map
+  - it wouldn't be that hard to implement multiple reboot tokens, where each of them will have a
+    specified rectangle where it is active (and checkpoints will be a fallback). The biggest issue
+    I currently see with this is how to indicate that in the frontend
 - spawn points are assigned randomly (no player choice)
 - running out of SPAM cards isn't supported (yet) (no player choice)
 - reboot token has set orientation (no player choice)
-  - a drawback of this is that there's now a risk of entering an infinite reboot cycle
+  - a drawback of this is that there's now a risk of entering an infinite reboot cycle - we panic
+    in that case
 - belt movements also sorted by priority antenna (no move-to-same-tile edge-case)
 - programming Again after damage card re-executes the substitute action,
   doesn't draw another card (why would anyone ever program cards like that anyway)
+- board lasers are always only 1-hit
+
+- todo: if you program SPAM in first register, it is possible to draw Again, in which case the program would panic. therefore I need to implement a new behavior: Again is allowed to be programmed in the first register, but acts like a SPAM card - draws a new card and executes it.
