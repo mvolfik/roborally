@@ -3,9 +3,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Card {
     SPAM,
-    Worm,
-    Virus,
-    Trojan,
     Move1,
     Move2,
     Move3,
@@ -34,9 +31,6 @@ pub mod wrapper {
             use Card::*;
             match self.0 {
                 SPAM => intern("spam.png").to_owned(),
-                Worm => intern("worm.png").to_owned(),
-                Virus => intern("virus.png").to_owned(),
-                Trojan => intern("trojan.png").to_owned(),
                 Move1 => intern("move1.png").to_owned(),
                 Move2 => intern("move2.png").to_owned(),
                 Move3 => intern("move3.png").to_owned(),

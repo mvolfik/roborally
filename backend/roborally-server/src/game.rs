@@ -93,13 +93,8 @@ impl Player {
         }
     }
 
-    pub fn draw_spam(&mut self, damage_piles: &mut DamagePiles) {
-        if damage_piles.spam > 0 {
-            damage_piles.spam -= 1;
-            self.discard_pile.push(Card::SPAM);
-        } else {
-            todo!()
-        }
+    pub fn draw_spam(&mut self) {
+        self.discard_pile.push(Card::SPAM);
     }
 }
 
@@ -127,7 +122,6 @@ pub struct Game {
     pub players: Vec<Player>,
     pub phase: GamePhase,
     pub name: String,
-    pub damage_piles: DamagePiles,
     pub animations: Vec<Animation>,
 }
 
@@ -183,12 +177,6 @@ impl Game {
             phase: GamePhase::Programming(repeat(None).take(players_n).collect()),
             name,
             animations: Vec::new(),
-            damage_piles: DamagePiles {
-                spam: 30,
-                worm: 15,
-                virus: 15,
-                trojan: 15,
-            },
         })
     }
 
@@ -251,8 +239,8 @@ impl Game {
     fn reboot(&mut self, player_i: usize) {
         let reboot_token = self.map.reboot_token;
         let player = self.players.get_mut(player_i).unwrap();
-        player.draw_spam(&mut self.damage_piles);
-        player.draw_spam(&mut self.damage_piles);
+        player.draw_spam();
+        player.draw_spam();
         player.public_state.direction = reboot_token.1;
         player.public_state.is_rebooting = true;
 
@@ -436,26 +424,6 @@ fn execute_card(
 
         match card {
             SPAM => {
-                game.damage_piles.spam += 1;
-                *card = player.draw_one();
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-                execute_card(game_arc, player_i, register_i).await;
-            }
-            Worm => {
-                game.damage_piles.worm += 1;
-                // even though the card won't be played, we need to set it to move the worm out of the deck
-                *card = player.draw_one();
-                game.reboot(player_i);
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            Virus => todo!(),
-
-            Trojan => {
-                game.damage_piles.trojan += 1;
-                player.draw_spam(&mut game.damage_piles);
-                player.draw_spam(&mut game.damage_piles);
                 *card = player.draw_one();
                 drop(guard);
                 notify_sleep(&mut game_arc).await;
@@ -728,7 +696,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     "Laser shot player {:?}",
                                     player2.connected.upgrade().map(|c| c.name.clone())
                                 );
-                                player2.draw_spam(&mut game.damage_piles);
+                                player2.draw_spam();
                                 game.animations
                                     .push(Animation::BulletFlight(start_pos, bullet_pos));
                                 drop(guard);
@@ -788,7 +756,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     player_i,
                                     player2.connected.upgrade().map(|c| c.name.clone())
                                 );
-                                player2.draw_spam(&mut game.damage_piles);
+                                player2.draw_spam();
                                 game.animations
                                     .push(Animation::BulletFlight(start_pos, bullet_pos));
                                 drop(guard);
