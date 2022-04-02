@@ -99,6 +99,12 @@ impl PlayerConnection {
         let self_arc = {
             let mut game = game_lock.write().await;
             let map = game.map.clone();
+            if let GamePhase::HasWinner(..) = game.phase {
+                writer
+                    .close_with_notice("This game has already finished".to_owned())
+                    .await;
+                return;
+            }
             let Some(player) = game.players.get_mut(seat) else {
                 writer.close_with_notice("There aren't that many seats".to_owned()).await;
                 return
