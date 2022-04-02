@@ -241,7 +241,8 @@ async fn main() {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let mut games = games_lock.write().await;
             let to_remove = games.iter_mut().map(async move |(id, index_entry)| {
-                if index_entry.game
+                if index_entry
+                    .game
                     .read()
                     .await
                     .players
@@ -249,19 +250,17 @@ async fn main() {
                     .any(|p| p.connected.strong_count() > 0)
                 {
                     None
-                } else {
-                    if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
-                        if Instant::now().duration_since(last_nobody_connected)
-                            > Duration::from_secs(60)
-                        {
-                            Some(*id)
-                        } else {
-                            None
-                        }
+                } else if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
+                    if Instant::now().duration_since(last_nobody_connected)
+                        > Duration::from_secs(60)
+                    {
+                        Some(*id)
                     } else {
-                        index_entry.last_nobody_connected = Some(Instant::now());
                         None
                     }
+                } else {
+                    index_entry.last_nobody_connected = Some(Instant::now());
+                    None
                 }
             });
             for id_opt in join_all(to_remove).await {

@@ -30,16 +30,15 @@
       programmedCards[register_i] = e.detail.items;
     }
   }
-  let eventSource =
-    createEventDispatcher<{
-      programmingDone: [
-        CardWrapper,
-        CardWrapper,
-        CardWrapper,
-        CardWrapper,
-        CardWrapper
-      ];
-    }>();
+  let eventSource = createEventDispatcher<{
+    programmingDone: [
+      CardWrapper,
+      CardWrapper,
+      CardWrapper,
+      CardWrapper,
+      CardWrapper
+    ];
+  }>();
 </script>
 
 <div class="outer">
