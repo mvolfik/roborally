@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+
   import Game from "./lib/Game.svelte";
   import Map from "./lib/Map.svelte";
   import { fetchMap } from "./lib/utils";
@@ -60,6 +62,18 @@
   }
 
   let previewedMap = undefined;
+
+  onMount(() => {
+    const interval = setInterval(() => {
+      if (state.state !== "inGame") {
+        // await the fetch, and then set the promise to a "dummy" immediately-resolved one
+        refresh_game_list().then(
+          (val) => (games_promise = Promise.resolve(val))
+        );
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  });
 </script>
 
 {#if state.state === "inGame"}

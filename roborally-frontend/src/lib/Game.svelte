@@ -42,7 +42,7 @@
     );
     connection.binaryType = "arraybuffer";
     connection.onclose = () => {
-      eventSource("disconnect");
+      disconnect();
     };
     connection.addEventListener(
       "message",
@@ -52,7 +52,7 @@
           connection.addEventListener("message", mainHandler);
         } catch (e) {
           alert(e);
-          eventSource("disconnect");
+          disconnect();
         }
       },
       { once: true }
@@ -74,6 +74,10 @@
   });
 
   let eventSource = createEventDispatcher();
+  let disconnect = () => {
+    eventSource("disconnect");
+    disconnect = () => {};
+  };
   $: phase = $stateStore?.phase;
 </script>
 
@@ -145,9 +149,7 @@
           <div style:--player-i={player_i}>
             {#if player_i === seat}
               <div class="name self">
-                You <button on:click={() => eventSource("disconnect")}
-                  >Disconnect</button
-                >
+                You <button on:click={() => disconnect()}>Disconnect</button>
               </div>
             {:else if name === undefined}
               <div class="name disconnected">
