@@ -5,7 +5,7 @@ use futures::{
     SinkExt, StreamExt,
 };
 use roborally_structs::{
-    logging::{error, info, warn},
+    logging::{debug, error, info, warn},
     transport::{ClientMessage, ServerMessage},
 };
 use tokio::sync::RwLock;
@@ -76,7 +76,8 @@ impl PlayerConnection {
     pub async fn create_and_start(game_opt: Option<Arc<RwLock<Game>>>, socket: WebSocket) {
         let (w, mut reader) = socket.split();
         let mut writer = SocketWriter(w);
-        let Some(game_lock) = game_opt else {
+        let Some(game_lock) = game_opt
+        else {
             writer.close_with_notice("Game with this ID doesn't exist".to_owned()).await;
             return;
         };
@@ -105,7 +106,8 @@ impl PlayerConnection {
                     .await;
                 return;
             }
-            let Some(player) = game.players.get_mut(seat) else {
+            let Some(player) = game.players.get_mut(seat)
+            else {
                 writer.close_with_notice("There aren't that many seats".to_owned()).await;
                 return
             };
@@ -127,10 +129,10 @@ impl PlayerConnection {
             game.notify_update().await;
             conn
         };
-        let self_arc2 = Arc::clone(&self_arc);
+        let self_weak = Arc::downgrade(&self_arc);
         tokio::spawn(async move {
-            loop {
-                if let Err(e) = self_arc2
+            while let Some(ping_conn) = self_weak.upgrade() {
+                if let Err(e) = ping_conn
                     .socket
                     .write()
                     .await
@@ -141,8 +143,11 @@ impl PlayerConnection {
                     warn!("Error sending ping: {}", e);
                     break;
                 }
+                // free the Arc, only leave the weak_ref so that the seat is freed as soon as player disconnects
+                drop(ping_conn);
                 tokio::time::sleep(Duration::from_secs(15)).await;
             }
+            debug!("Ending ping loop");
         });
         tokio::spawn(async move {
             while let Some(msg) = match receive_client_message(&mut reader).await {

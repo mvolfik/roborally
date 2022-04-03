@@ -84,6 +84,14 @@
     on:disconnect={() => {
       state = { state: "disconnected" };
       games_promise = refresh_game_list();
+      // refresh again soon after, the seat this player just left should be empty
+      setTimeout(
+        () =>
+          refresh_game_list().then(
+            (val) => (games_promise = Promise.resolve(val))
+          ),
+        1000
+      );
     }}
   />
 {:else}

@@ -74,7 +74,8 @@ async fn new_game_handler(
         name,
     }: NewGameData,
 ) -> impl Reply {
-    let Some(map) = maps.get(&map_name) else {
+    let Some(map) = maps.get(&map_name)
+    else {
         return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST)
     };
     let game = match Game::new(map.clone(), players) {

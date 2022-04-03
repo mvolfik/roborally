@@ -257,7 +257,8 @@ impl Game {
         let target_pos;
         // fall through or break 'checks => can move
         let should_reboot = 'checks: {
-            let Some(origin_tile) = self.map.tiles.get(origin_pos) else {
+            let Some(origin_tile) = self.map.tiles.get(origin_pos)
+            else {
                 return MoveResult::DidntMove;
             };
             let direction = dir_opt.unwrap_or_else(|| player.public_state.direction.to_basic());
@@ -266,7 +267,8 @@ impl Game {
                 return MoveResult::DidntMove;
             }
             target_pos = direction.apply_to(&origin_pos);
-            let Some(target_tile) = self.map.tiles.get(target_pos) else {
+            let Some(target_tile) = self.map.tiles.get(target_pos)
+            else {
                 debug!("Falling out from map");
                 // falling into void
                 break 'checks true;
@@ -323,7 +325,8 @@ impl Game {
 
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
-        let GamePhase::Programming(vec) = &mut self.phase else {
+        let GamePhase::Programming(vec) = &mut self.phase
+        else {
             return Err("Programming phase isn't active right now".to_owned());
         };
         let my_programmed_ref = match vec.get_mut(seat).unwrap() {
