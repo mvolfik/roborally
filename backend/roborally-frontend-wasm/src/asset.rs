@@ -89,7 +89,7 @@ impl From<GameMap> for AssetMap {
                     use TileType::*;
                     let mut tile_assets = match tile.typ {
                         Void => vec![Asset {
-                            uri: intern("floor.png").to_owned(),
+                            uri: intern("floor.jpg").to_owned(),
                             effects: Effects {
                                 scale: 0.25,
                                 only_show_sides: Some(DirectionBools {
