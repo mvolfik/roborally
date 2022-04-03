@@ -27,3 +27,10 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 - programming Again after damage card re-executes the substitute action,
   doesn't draw another card (why would anyone ever program cards like that anyway)
 - board lasers are always only 1-hit
+
+## TODOs
+- fix when bullet from map laser shoots to the same place
+- player names above robots
+- player name length limit
+- fix ping loop holding strong connection reference
+- 
