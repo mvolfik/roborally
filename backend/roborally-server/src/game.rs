@@ -412,7 +412,7 @@ fn execute_card(
     else {
         panic!("Invalid state")
     };
-        let card = cards
+        let card: &mut Card = cards
             .get_mut(player_i)
             .unwrap()
             .get_mut(register_i)
@@ -854,7 +854,8 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
     }
 }
 
-/// Asking for a mutable `game_arc` reference to help check that it isn't borrowed anywhere
+/// Asking for a mutable `game_arc` reference to help check that it isn't borrowed (i.e. locked)
+/// Caller could of course clone the arc and pass that, but this is 'defense-in-depth' against deadlocks
 async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
     game_arc.write().await.notify_update().await;
     sleep(Duration::from_secs(1)).await;
