@@ -14,7 +14,7 @@ impl std::fmt::Display for Transform {
             write!(
                 f,
                 "rotate({}deg)",
-                if self.flip_x { -1 } else { 1 } * self.rotate.get_rotation()
+                self.rotate.get_rotation()
             )?;
         }
         if self.scale != 1.0 {
