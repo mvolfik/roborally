@@ -208,7 +208,7 @@ impl Game {
         if !self
             .map
             .tiles
-            .get(pos.x, pos.y)
+            .get(pos)
             .is_some_and(|tile| tile.typ != TileType::Void)
         {
             panic!("Infinite reboot cycle entered");
@@ -257,7 +257,7 @@ impl Game {
         let target_pos;
         // fall through or break 'checks => can move
         let should_reboot = 'checks: {
-            let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
+            let Some(origin_tile) = self.map.tiles.get(origin_pos) else {
                 return MoveResult::DidntMove;
             };
             let direction = dir_opt.unwrap_or_else(|| player.public_state.direction.to_basic());
@@ -266,7 +266,7 @@ impl Game {
                 return MoveResult::DidntMove;
             }
             target_pos = direction.apply_to(&origin_pos);
-            let Some(target_tile) = self.map.tiles.get(target_pos.x, target_pos.y) else {
+            let Some(target_tile) = self.map.tiles.get(target_pos) else {
                 debug!("Falling out from map");
                 // falling into void
                 break 'checks true;
@@ -557,8 +557,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     for _ in 0..2 {
                         let mut game = game_arc.write().await;
                         let pos = game.players.get(player_i).unwrap().public_state.position;
-                        if let TileType::Belt(true, dir, end) =
-                            game.map.tiles.get(pos.x, pos.y).unwrap().typ
+                        if let TileType::Belt(true, dir, end) = game.map.tiles.get(pos).unwrap().typ
                         {
                             debug!("Moving player {} on a fast belt", player_i);
                             let moved = game.mov(player_i, false, Some(dir));
@@ -596,9 +595,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 for player_i in player_i_sorted_by_priority {
                     let mut game = game_arc.write().await;
                     let pos = game.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::Belt(false, dir, end) =
-                        game.map.tiles.get(pos.x, pos.y).unwrap().typ
-                    {
+                    if let TileType::Belt(false, dir, end) = game.map.tiles.get(pos).unwrap().typ {
                         debug!("Moving player {} on a slow belt", player_i);
                         let moved = game.mov(player_i, false, Some(dir));
                         if (moved == MoveResult::Moved { rebooted: false }) {
@@ -628,9 +625,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 for player_i in player_i_sorted_by_priority {
                     let mut game = game_arc.write().await;
                     let pos = game.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::PushPanel(dir, active) =
-                        game.map.tiles.get(pos.x, pos.y).unwrap().typ
-                    {
+                    if let TileType::PushPanel(dir, active) = game.map.tiles.get(pos).unwrap().typ {
                         if *active.get(register).unwrap() {
                             debug!("Moving player {} from a push panel", player_i);
                             game.mov(player_i, true, Some(dir));
@@ -649,12 +644,8 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                 let mut any_rotated = false;
                 for player_i in player_i_sorted_by_priority {
                     let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
-                    if let TileType::Rotation(is_cw) = game
-                        .map
-                        .tiles
-                        .get(player_state.position.x, player_state.position.y)
-                        .unwrap()
-                        .typ
+                    if let TileType::Rotation(is_cw) =
+                        game.map.tiles.get(player_state.position).unwrap().typ
                     {
                         let dir = &mut player_state.direction;
                         *dir = if is_cw {
@@ -682,7 +673,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     let mut guard = game_arc.write().await;
                     let game = &mut *guard;
                     let mut bullet_pos = start_pos;
-                    let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();
+                    let mut tile = *game.map.tiles.get(bullet_pos).unwrap();
                     'map_bullet_flight: loop {
                         for player2 in &mut game.players {
                             if player2.public_state.position == bullet_pos {
@@ -703,7 +694,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                             break;
                         }
                         bullet_pos = bullet_dir.apply_to(&bullet_pos);
-                        tile = match game.map.tiles.get(bullet_pos.x, bullet_pos.y) {
+                        tile = match game.map.tiles.get(bullet_pos) {
                             // out of map
                             None => break,
                             Some(t) => *t,
@@ -727,14 +718,14 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     let bullet_dir = player_state.direction.to_basic();
                     let start_pos = player_state.position;
                     let mut bullet_pos = start_pos;
-                    let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();
+                    let mut tile = *game.map.tiles.get(bullet_pos).unwrap();
                     'robot_bullet_flight: loop {
                         // wall on the tile we're leaving?
                         if tile.walls.get(&bullet_dir) {
                             break;
                         }
                         bullet_pos = bullet_dir.apply_to(&bullet_pos);
-                        tile = match game.map.tiles.get(bullet_pos.x, bullet_pos.y) {
+                        tile = match game.map.tiles.get(bullet_pos) {
                             // out of map
                             None => break,
                             Some(t) => *t,

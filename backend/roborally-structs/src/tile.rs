@@ -52,22 +52,26 @@ pub struct Grid<T> {
 }
 
 impl<T> Grid<T> {
-    pub fn get(&self, x: usize, y: usize) -> Option<&T> {
-        if x >= self.size.x || y >= self.size.y {
+    pub fn get(&self, pos: Position) -> Option<&T> {
+        if pos.x >= self.size.x || pos.y >= self.size.y {
             return None;
         }
-        self.vec.get(y * self.size.x + x)
+        self.vec.get(pos.y * self.size.x + pos.x)
     }
 
-    pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut T> {
-        if x >= self.size.x || y >= self.size.y {
+    pub fn get_mut(&mut self, pos: Position) -> Option<&mut T> {
+        if pos.x >= self.size.x || pos.y >= self.size.y {
             return None;
         }
-        self.vec.get_mut(y * self.size.x + x)
+        self.vec.get_mut(pos.y * self.size.x + pos.x)
     }
 
     pub fn size(&self) -> Position {
         self.size
+    }
+
+    pub fn vec(&self) -> &Vec<T> {
+        &self.vec
     }
 
     pub fn new(vec: Vec<T>, size: Position) -> Result<Self, String> {
@@ -77,22 +81,25 @@ impl<T> Grid<T> {
             Err("Supplied position doesn't match vector size".to_owned())
         }
     }
-
-    pub fn map<U>(&self, c: impl FnMut(&T) -> U) -> Grid<U> {
-        Grid {
-            vec: self.vec.iter().map(c).collect(),
-            size: self.size,
-        }
-    }
 }
 
 // impl<'a, T> IntoIterator for &'a Grid<T> {
 //     type Item = (Position, &'a T);
 
-//     type IntoIter = GridIter<'a, T>;
+//     type IntoIter = Map<Enumerate<Iter<'a, T>>, impl FnMut((usize, &T)) -> (Position, &T)>;
 
-//     fn into_iter(self) -> Self::IntoIter {
-//         GridIter { grid: self, i: 0 }
+//     fn into_iter(self: &'a Grid<T>) -> Self::IntoIter {
+//         let vec: Enumerate<Iter<'_, T>> = self.vec.iter().enumerate();
+//         let f = &mut |(i, item)| {
+//             (
+//                 Position {
+//                     x: i % self.size.x,
+//                     y: i / self.size.x,
+//                 },
+//                 item,
+//             )
+//         };
+//         vec.map(f)
 //     }
 // }
 

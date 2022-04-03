@@ -1,3 +1,5 @@
+use std::ops::Sub;
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -114,5 +116,13 @@ impl ContinuousDirection {
     #[inline]
     pub fn rotated_ccw(&self) -> Self {
         Self(self.0 - 1)
+    }
+}
+
+impl Sub for ContinuousDirection {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        ContinuousDirection(self.0 - rhs.0)
     }
 }

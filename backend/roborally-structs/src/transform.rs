@@ -11,13 +11,14 @@ pub struct Effects {
     pub scale: f64,
     /// color wheel radians
     pub hue_shift: f64,
-    ///
+    /// will use CSS mask-image to only show given borders
+    /// probably only useful for void, defaults to None to show tile normally
     pub only_show_sides: Option<DirectionBools>,
 }
 
 impl std::fmt::Display for Effects {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "transform: ")?;
+        write!(f, "transform:")?;
         if !self.rotate.is_none() {
             write!(f, "rotate({}deg)", self.rotate.get_rotation())?;
         }
@@ -47,11 +48,24 @@ impl std::fmt::Display for Effects {
             write!(f, "filter: hue-rotate({});", self.hue_shift)?;
         }
         if let Some(sides) = self.only_show_sides {
-            for (dir, is_shown) in sides.to_items() {
-                if is_shown {
-                    // todo
-                }
-            }
+            write!(
+                f,
+                "mask-image:{};",
+                sides
+                    .to_items()
+                    .into_iter()
+                    .filter_map(|(dir, is_shown)| if is_shown {
+                        Some(format!(
+                            "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
+                            if self.flip_x { -1 } else { 1 }
+                                * (dir.to_continuous() - self.rotate).get_rotation()
+                        ))
+                    } else {
+                        None
+                    })
+                    .intersperse_with(|| ",".to_owned())
+                    .collect::<String>()
+            )?;
         }
         Ok(())
     }

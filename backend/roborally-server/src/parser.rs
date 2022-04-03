@@ -357,9 +357,8 @@ impl Parse for GameMap {
                     && (pos.x < size.x - 1 || *dir != Direction::Right)
                     && (pos.y < size.y - 1 || *dir != Direction::Down)
             };
-            let mut is_on_floor = |p: &Position| {
-                tiles.get(p.x as usize, p.y as usize).map(|x| x.typ) == Some(TileType::Floor)
-            };
+            let mut is_on_floor =
+                |p: &Position| tiles.get(*p).map(|x| x.typ) == Some(TileType::Floor);
 
             let mut used_special_tiles: HashSet<Position> = HashSet::new();
             let mut doesnt_overlap_other_special = |p: &Position| used_special_tiles.insert(*p);
@@ -374,7 +373,7 @@ impl Parse for GameMap {
                     (
                         &mut |p| {
                             matches!(
-                                tiles.get(p.x as usize, p.y as usize),
+                                tiles.get(*p),
                                 Some(Tile {
                                     walls: DirectionBools {
                                         up: true,

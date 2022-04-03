@@ -14,6 +14,7 @@
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 #![feature(thread_id_value)]
+#![feature(iter_intersperse)]
 
 pub mod animations;
 pub mod card;
