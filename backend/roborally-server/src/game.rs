@@ -55,7 +55,7 @@ impl Player {
         let mut p = Self {
             public_state: PlayerPublicState {
                 position: spawn_point.0,
-                direction: spawn_point.1,
+                direction: spawn_point.1.to_continuous(),
                 checkpoint: 0,
                 is_rebooting: false,
             },
@@ -239,7 +239,7 @@ impl Game {
         let player = self.players.get_mut(player_i).unwrap();
         player.draw_spam();
         player.draw_spam();
-        player.public_state.direction = reboot_token.1;
+        player.public_state.direction = reboot_token.1.to_continuous();
         player.public_state.is_rebooting = true;
 
         // temporarily move them away, to prevent collisions with players pushed during reboot
@@ -260,7 +260,7 @@ impl Game {
             let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
                 return MoveResult::DidntMove;
             };
-            let direction = dir_opt.unwrap_or(player.public_state.direction);
+            let direction = dir_opt.unwrap_or(player.public_state.direction.to_basic());
             if origin_tile.walls.get(&direction) {
                 debug!("There's a wall on source tile");
                 return MoveResult::DidntMove;
@@ -455,7 +455,7 @@ fn execute_card(
                 }
             }
             Reverse1 => {
-                let dir = player.public_state.direction.rotated().rotated();
+                let dir = player.public_state.direction.to_basic().rotated().rotated();
                 game.mov(player_i, true, Some(dir));
                 drop(guard);
                 notify_sleep(&mut game_arc).await;
@@ -466,8 +466,7 @@ fn execute_card(
                 notify_sleep(&mut game_arc).await;
             }
             TurnLeft => {
-                player.public_state.direction =
-                    player.public_state.direction.rotated().rotated().rotated();
+                player.public_state.direction = player.public_state.direction.rotated_ccw();
                 drop(guard);
                 notify_sleep(&mut game_arc).await;
             }
@@ -572,11 +571,8 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                             .get_mut(player_i)
                                             .unwrap()
                                             .public_state;
-                                        player_public_state.direction = player_public_state
-                                            .direction
-                                            .rotated()
-                                            .rotated()
-                                            .rotated();
+                                        player_public_state.direction =
+                                            player_public_state.direction.rotated_ccw();
                                     }
                                     BeltEnd::TurnRight => {
                                         let player_public_state = &mut game
@@ -612,7 +608,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     let player_public_state =
                                         &mut game.players.get_mut(player_i).unwrap().public_state;
                                     player_public_state.direction =
-                                        player_public_state.direction.rotated().rotated().rotated();
+                                        player_public_state.direction.rotated_ccw();
                                 }
                                 BeltEnd::TurnRight => {
                                     let player_public_state =
@@ -664,7 +660,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                         *dir = if is_cw {
                             dir.rotated()
                         } else {
-                            dir.rotated().rotated().rotated()
+                            dir.rotated_ccw()
                         };
                         any_rotated = true;
                     }
@@ -728,7 +724,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                     if player_state.is_rebooting {
                         continue;
                     }
-                    let bullet_dir = player_state.direction;
+                    let bullet_dir = player_state.direction.to_basic();
                     let start_pos = player_state.position;
                     let mut bullet_pos = start_pos;
                     let mut tile = *game.map.tiles.get(bullet_pos.x, bullet_pos.y).unwrap();

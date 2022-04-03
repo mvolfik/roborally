@@ -3,7 +3,7 @@ use std::mem;
 use crate::{
     animations::Animation,
     card::Card,
-    position::{Direction, Position},
+    position::{ContinuousDirection, Position},
 };
 use log::error;
 use serde::{Deserialize, Serialize};
@@ -45,17 +45,17 @@ pub enum GamePhaseView {
     HasWinner(usize),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct PlayerPublicState {
     pub position: Position,
-    pub direction: Direction,
+    pub direction: ContinuousDirection,
     pub checkpoint: usize,
     pub is_rebooting: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
 pub struct PlayerGameStateView {
@@ -238,7 +238,7 @@ mod wrapper {
         /// Note: doesn't include transform to current tile
         pub fn transform_string(&self) -> String {
             Transform {
-                rotate: self.state.direction.get_rotation(),
+                rotate: self.state.direction,
                 ..Transform::default()
             }
             .to_string()

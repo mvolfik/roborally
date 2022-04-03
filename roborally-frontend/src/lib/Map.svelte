@@ -65,7 +65,7 @@
 </script>
 
 <div class="outer">
-  <Zoomable>
+  <Zoomable maxScale={2}>
     <!-- svelte-ignore a11y-mouse-events-have-key-events -->
     <div
       class="grid"

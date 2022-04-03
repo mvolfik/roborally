@@ -29,18 +29,18 @@ pub enum Direction {
 }
 
 impl Direction {
-    /// By default, all directed tiles should point up
-    #[must_use]
-    pub const fn get_rotation(self) -> Option<f64> {
+    #[inline]
+    pub const fn to_continuous(&self) -> ContinuousDirection {
         use Direction::*;
         match self {
-            Up => None,
-            Right => Some(90.0),
-            Down => Some(180.0),
-            Left => Some(-90.0),
+            Up => ContinuousDirection(0),
+            Right => ContinuousDirection(1),
+            Down => ContinuousDirection(2),
+            Left => ContinuousDirection(-1),
         }
     }
 
+    #[inline]
     pub fn rotated(&self) -> Direction {
         use Direction::*;
         match self {
@@ -48,6 +48,16 @@ impl Direction {
             Right => Down,
             Down => Left,
             Left => Up,
+        }
+    }
+    #[inline]
+    pub fn rotated_ccw(&self) -> Direction {
+        use Direction::*;
+        match self {
+            Up => Left,
+            Right => Up,
+            Down => Right,
+            Left => Down,
         }
     }
 
@@ -65,5 +75,44 @@ impl Direction {
                 y: *y,
             },
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "server", derive(Serialize))]
+#[cfg_attr(feature = "client", derive(Deserialize))]
+pub struct ContinuousDirection(i64);
+
+impl ContinuousDirection {
+    pub fn to_basic(&self) -> Direction {
+        let rem = self.0.rem_euclid(4);
+        if rem == 0 {
+            Direction::Up
+        } else if rem == 1 {
+            Direction::Down
+        } else if rem == 2 {
+            Direction::Right
+        } else {
+            debug_assert_eq!(rem, 3);
+            Direction::Left
+        }
+    }
+    #[inline]
+    pub fn is_none(&self) -> bool {
+        self.0 == 0
+    }
+    #[inline]
+    pub fn get_rotation(&self) -> i64 {
+        self.0 * 90
+    }
+
+    #[inline]
+    pub fn rotated(&self) -> Self {
+        Self(self.0 + 1)
+    }
+
+    #[inline]
+    pub fn rotated_ccw(&self) -> Self {
+        Self(self.0 - 1)
     }
 }

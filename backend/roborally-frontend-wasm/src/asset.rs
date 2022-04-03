@@ -51,11 +51,16 @@ impl From<&Tile> for TileAssets {
         let mut assets = match t.typ {
             Void => vec![Asset {
                 uri: intern("void.png").to_owned(),
-                transform: Transform::default(),
+                transform: Transform {
+                    ..Transform::random_rotate_flip()
+                },
             }],
             Floor => vec![Asset {
-                uri: intern("floor.png").to_string(),
-                transform: Transform::default(),
+                uri: intern("floor.jpg").to_owned(),
+                transform: Transform {
+                    scale: 0.25,
+                    ..Transform::random_rotate_flip()
+                },
             }],
             Belt(is_fast, dir, end) => {
                 vec![Asset {
@@ -66,7 +71,7 @@ impl From<&Tile> for TileAssets {
                     ),
                     transform: Transform {
                         flip_x: end == BeltEnd::TurnLeft,
-                        rotate: dir.get_rotation(),
+                        rotate: dir.to_continuous(),
                         ..Transform::default()
                     },
                 }]
@@ -82,11 +87,12 @@ impl From<&Tile> for TileAssets {
                 let mut assets = vec![Asset {
                     uri: intern("push-panel.png").to_owned(),
                     transform: Transform {
-                        rotate: dir.get_rotation(),
+                        rotate: dir.to_continuous(),
                         ..Transform::default()
                     },
                 }];
                 for (i, is_active) in active_rounds.iter().enumerate() {
+                    
                     #[allow(clippy::cast_precision_loss)]
                     assets.push(Asset {
                         uri: format!(
@@ -95,7 +101,7 @@ impl From<&Tile> for TileAssets {
                         ),
                         transform: Transform {
                             translate: Some(((7 + i * 10) as f64, 6.0)),
-                            rotate: dir.get_rotation(),
+                            rotate: dir.to_continuous(),
                             ..Transform::default()
                         },
                     });
@@ -113,7 +119,7 @@ impl From<&Tile> for TileAssets {
                 assets.push(Asset {
                     uri: intern("wall.png").to_owned(),
                     transform: Transform {
-                        rotate: dir.get_rotation(),
+                        rotate: dir.to_continuous(),
                         ..Transform::default()
                     },
                 });
@@ -167,7 +173,7 @@ impl From<GameMap> for AssetMap {
             .push(Asset {
                 uri: intern("reboot-token.png").to_owned(),
                 transform: Transform {
-                    rotate: m.reboot_token.1.get_rotation(),
+                    rotate: m.reboot_token.1.to_continuous(),
                     ..Transform::default()
                 },
             });
@@ -199,7 +205,7 @@ impl From<GameMap> for AssetMap {
             assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
                 uri: intern("spawn-point.png").to_owned(),
                 transform: Transform {
-                    rotate: dir.get_rotation(),
+                    rotate: dir.to_continuous(),
                     ..Transform::default()
                 },
             });
@@ -209,7 +215,7 @@ impl From<GameMap> for AssetMap {
             assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
                 uri: intern("laser.png").to_owned(),
                 transform: Transform {
-                    rotate: dir.get_rotation(),
+                    rotate: dir.to_continuous(),
                     ..Transform::default()
                 },
             });

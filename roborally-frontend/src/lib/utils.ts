@@ -1,6 +1,6 @@
 import { AssetMap, parse_map } from "frontend-wasm";
 
-const assets = import.meta.globEager("../assets/textures/*.png", {
+const assets = import.meta.globEager("../assets/textures/*.???", {
   assert: { type: "url" },
 }) as Record<string, { default: string }>;
 
@@ -8,7 +8,7 @@ export function getTexture(name: string): string {
   return (
     assets["../assets/textures/" + name]?.default ??
     (console.warn(`Unknown asset ${name}, using floor as fallback`),
-    assets["../assets/textures/floor.png"].default)
+    assets["../assets/textures/floor.jpg"].default)
   );
 }
 
