@@ -77,6 +77,12 @@
   $: phase = $stateStore?.phase;
 </script>
 
+<svelte:window
+  on:beforeunload={(e) => {
+    // show a confirmation prompt
+    e.preventDefault();
+  }}
+/>
 <div
   class="outer"
   style:--seat-color={`hsla(${3.979 + seat * 0.9}rad, 93%, 22%, 0.62)`}
@@ -138,7 +144,11 @@
           {@const name = player.name}
           <div style:--player-i={player_i}>
             {#if player_i === seat}
-              <div class="name self">You</div>
+              <div class="name self">
+                You <button on:click={() => eventSource("disconnect")}
+                  >Disconnect</button
+                >
+              </div>
             {:else if name === undefined}
               <div class="name disconnected">
                 Seat {player_i + 1} (disconnected)
