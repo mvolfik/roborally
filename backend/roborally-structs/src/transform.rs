@@ -1,21 +1,22 @@
-use crate::position::{ContinuousDirection, Direction};
+use crate::{position::{ContinuousDirection, Direction}, tile::DirectionBools};
 
 #[derive(Clone, Copy)]
-pub struct Transform {
+pub struct Effects {
     pub rotate: ContinuousDirection,
     pub flip_x: bool,
     pub translate: Option<(f64, f64)>,
     pub scale: f64,
+    /// color wheel radians
+    pub hue_shift: f64,
+    /// 
+    pub only_show_sides: Option<DirectionBools>
 }
 
-impl std::fmt::Display for Transform {
+impl std::fmt::Display for Effects {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "transform: ")?;
         if !self.rotate.is_none() {
-            write!(
-                f,
-                "rotate({}deg)",
-                self.rotate.get_rotation()
-            )?;
+            write!(f, "rotate({}deg)", self.rotate.get_rotation())?;
         }
         if self.scale != 1.0 {
             let trans = (self.scale - 1.0) * 32.0;
@@ -38,23 +39,36 @@ impl std::fmt::Display for Transform {
                 y
             )?;
         }
+        write!(f, ";")?;
+        if self.hue_shift != 0.0 {
+            write!(f, "filter: hue-rotate({});", self.hue_shift)?;
+        }
+        if let Some(sides) = self.only_show_sides {
+            for (dir, is_shown) in sides.to_items() {
+                if is_shown {
+                    // todo
+                }
+            }
+        }
         Ok(())
     }
 }
 
-impl Default for Transform {
+impl Default for Effects {
     fn default() -> Self {
         Self {
             rotate: Direction::Up.to_continuous(),
             flip_x: false,
             translate: None,
             scale: 1.0,
+            hue_shift: 0.0,
+            only_show_sides: None
         }
     }
 }
 
 #[cfg(feature = "client")]
-impl Transform {
+impl Effects {
     pub fn random_rotate_flip() -> Self {
         let rotate_rand = js_sys::Math::random();
         let flip_rand = js_sys::Math::random();

@@ -8,14 +8,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
-pub struct WallsDescription {
+pub struct DirectionBools {
     pub up: bool,
     pub right: bool,
     pub down: bool,
     pub left: bool,
 }
 
-impl WallsDescription {
+impl DirectionBools {
     pub fn get(&self, dir: &Direction) -> bool {
         match dir {
             Direction::Up => self.up,
@@ -24,6 +24,15 @@ impl WallsDescription {
             Direction::Left => self.left,
         }
     }
+
+    pub fn to_items(&self) -> [(Direction, bool); 4] {
+        [
+            (Direction::Up, self.up),
+            (Direction::Right, self.right),
+            (Direction::Down, self.down),
+            (Direction::Left, self.left),
+        ]
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,7 +40,7 @@ impl WallsDescription {
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct Tile {
     pub typ: TileType,
-    pub walls: WallsDescription,
+    pub walls: DirectionBools,
 }
 
 #[derive(Clone, Debug)]

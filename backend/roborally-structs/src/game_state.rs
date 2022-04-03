@@ -216,7 +216,7 @@ extern "C" {
 mod wrapper {
     use wasm_bindgen::prelude::wasm_bindgen;
 
-    use crate::{position::Position, transform::Transform};
+    use crate::{position::Position, transform::Effects};
 
     use super::PlayerPublicState;
 
@@ -236,17 +236,13 @@ mod wrapper {
 
         #[wasm_bindgen(getter)]
         /// Note: doesn't include transform to current tile
-        pub fn transform_string(&self) -> String {
-            Transform {
+        pub fn style(&self) -> String {
+            Effects {
                 rotate: self.state.direction,
-                ..Transform::default()
+                hue_shift: self.seat as f64 * 0.9,
+                ..Effects::default()
             }
             .to_string()
-        }
-
-        #[wasm_bindgen(getter)]
-        pub fn filter_string(&self) -> String {
-            format!("hue-rotate({}rad)", self.seat as f64 * 0.9)
         }
 
         #[wasm_bindgen(getter)]

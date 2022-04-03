@@ -6,7 +6,7 @@ use std::{
 use roborally_structs::{
     game_map::GameMap,
     position::{Direction, Position},
-    tile::{Grid, Tile, WallsDescription},
+    tile::{Grid, Tile, DirectionBools},
     tile_type::{BeltEnd, TileType},
 };
 
@@ -210,7 +210,7 @@ impl Parse for TileType {
     }
 }
 
-impl Parse for WallsDescription {
+impl Parse for DirectionBools {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
         let mut res = Self::default();
         for c in value.chars() {
@@ -237,9 +237,9 @@ impl Parse for Tile {
         let mut split = value.split(':');
         let typ = TileType::parse(split.next().unwrap(), name)?;
         let walls = if let Some(wallspec) = split.next() {
-            WallsDescription::parse(wallspec, &format!("{}.walls", name))?
+            DirectionBools::parse(wallspec, &format!("{}.walls", name))?
         } else {
-            WallsDescription::default()
+            DirectionBools::default()
         };
 
         if split.next().is_some() {
@@ -376,7 +376,7 @@ impl Parse for GameMap {
                             matches!(
                                 tiles.get(p.x as usize, p.y as usize),
                                 Some(Tile {
-                                    walls: WallsDescription {
+                                    walls: DirectionBools {
                                         up: true,
                                         right: true,
                                         down: true,

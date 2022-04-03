@@ -88,7 +88,7 @@
               {@const assetUri = getTexture(asset.uri)}
               {#if assetUri !== undefined}
                 <img
-                  style:transform={asset.transform_string}
+                  style={asset.style}
                   src={assetUri}
                   alt=""
                 />
@@ -106,8 +106,7 @@
           src={robot}
           alt="Robot"
           class="robot"
-          style:transform={player.transform_string}
-          style:filter={player.filter_string}
+          style={player.style}
           style:--x={pos.x}
           style:--y={pos.y}
         />

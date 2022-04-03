@@ -1,9 +1,8 @@
 use roborally_structs::{
     game_map::GameMap,
-    position::Direction,
     tile::{Grid, Tile},
     tile_type::{BeltEnd, TileType},
-    transform::Transform,
+    transform::Effects,
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
@@ -13,7 +12,7 @@ use crate::create_array_type;
 #[derive(Clone)]
 pub struct Asset {
     uri: String,
-    transform: Transform,
+    effects: Effects,
 }
 
 create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset);
@@ -27,8 +26,8 @@ impl Asset {
     }
     #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn transform_string(&self) -> String {
-        self.transform.to_string()
+    pub fn style(&self) -> String {
+        self.effects.to_string()
     }
 }
 
@@ -50,16 +49,16 @@ impl From<&Tile> for TileAssets {
 
         let mut assets = match t.typ {
             Void => vec![Asset {
-                uri: intern("void.png").to_owned(),
-                transform: Transform {
-                    ..Transform::random_rotate_flip()
+                uri: intern("floor.png").to_owned(),
+                effects: Effects {
+                    ..Effects::random_rotate_flip()
                 },
             }],
             Floor => vec![Asset {
                 uri: intern("floor.jpg").to_owned(),
-                transform: Transform {
+                effects: Effects {
                     scale: 0.25,
-                    ..Transform::random_rotate_flip()
+                    ..Effects::random_rotate_flip()
                 },
             }],
             Belt(is_fast, dir, end) => {
@@ -69,26 +68,26 @@ impl From<&Tile> for TileAssets {
                         if is_fast { "fast" } else { "slow" },
                         if end == Straight { "straight" } else { "turn" }
                     ),
-                    transform: Transform {
+                    effects: Effects {
                         flip_x: end == BeltEnd::TurnLeft,
                         rotate: dir.to_continuous(),
-                        ..Transform::default()
+                        ..Effects::default()
                     },
                 }]
             }
             Rotation(is_clockwise) => vec![Asset {
                 uri: intern("rotate.png").to_owned(),
-                transform: Transform {
+                effects: Effects {
                     flip_x: !is_clockwise,
-                    ..Transform::default()
+                    ..Effects::default()
                 },
             }],
             PushPanel(dir, active_rounds) => {
                 let mut assets = vec![Asset {
                     uri: intern("push-panel.png").to_owned(),
-                    transform: Transform {
+                    effects: Effects {
                         rotate: dir.to_continuous(),
-                        ..Transform::default()
+                        ..Effects::default()
                     },
                 }];
                 for (i, is_active) in active_rounds.iter().enumerate() {
@@ -98,28 +97,23 @@ impl From<&Tile> for TileAssets {
                             "push-panel-indicator-{}.png",
                             if *is_active { "active" } else { "inactive" }
                         ),
-                        transform: Transform {
+                        effects: Effects {
                             translate: Some(((2 + i * 12) as f64, 42.0)),
                             rotate: dir.to_continuous(),
-                            ..Transform::default()
+                            ..Effects::default()
                         },
                     });
                 }
                 assets
             }
         };
-        for (is_wall, dir) in [
-            (t.walls.up, Direction::Up),
-            (t.walls.right, Direction::Right),
-            (t.walls.down, Direction::Down),
-            (t.walls.left, Direction::Left),
-        ] {
+        for (dir, is_wall) in t.walls.to_items() {
             if is_wall {
                 assets.push(Asset {
                     uri: intern("wall.png").to_owned(),
-                    transform: Transform {
+                    effects: Effects {
                         rotate: dir.to_continuous(),
-                        ..Transform::default()
+                        ..Effects::default()
                     },
                 });
             }
@@ -162,7 +156,7 @@ impl From<GameMap> for AssetMap {
             .0
             .push(Asset {
                 uri: intern("antenna.png").to_owned(),
-                transform: Transform::default(),
+                effects: Effects::default(),
             });
 
         assets
@@ -171,9 +165,9 @@ impl From<GameMap> for AssetMap {
             .0
             .push(Asset {
                 uri: intern("reboot-token.png").to_owned(),
-                transform: Transform {
+                effects: Effects {
                     rotate: m.reboot_token.1.to_continuous(),
-                    ..Transform::default()
+                    ..Effects::default()
                 },
             });
 
@@ -186,13 +180,13 @@ impl From<GameMap> for AssetMap {
                     [
                         Asset {
                             uri: intern("checkpoint.png").to_owned(),
-                            transform: Transform::default(),
+                            effects: Effects::default(),
                         },
                         Asset {
                             uri: format!("number-{}.png", i + 1),
-                            transform: Transform {
+                            effects: Effects {
                                 translate: Some((30.0, 30.0)),
-                                ..Transform::default()
+                                ..Effects::default()
                             },
                         },
                     ]
@@ -203,9 +197,9 @@ impl From<GameMap> for AssetMap {
         for (pos, dir) in m.spawn_points {
             assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
                 uri: intern("spawn-point.png").to_owned(),
-                transform: Transform {
+                effects: Effects {
                     rotate: dir.to_continuous(),
-                    ..Transform::default()
+                    ..Effects::default()
                 },
             });
         }
@@ -213,9 +207,9 @@ impl From<GameMap> for AssetMap {
         for (pos, dir) in m.lasers {
             assets.get_mut(pos.x, pos.y).unwrap().0.push(Asset {
                 uri: intern("laser.png").to_owned(),
-                transform: Transform {
+                effects: Effects {
                     rotate: dir.to_continuous(),
-                    ..Transform::default()
+                    ..Effects::default()
                 },
             });
         }
