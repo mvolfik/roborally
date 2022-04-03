@@ -260,7 +260,7 @@ impl Game {
             let Some(origin_tile) = self.map.tiles.get(origin_pos.x, origin_pos.y) else {
                 return MoveResult::DidntMove;
             };
-            let direction = dir_opt.unwrap_or(player.public_state.direction.to_basic());
+            let direction = dir_opt.unwrap_or_else(|| player.public_state.direction.to_basic());
             if origin_tile.walls.get(&direction) {
                 debug!("There's a wall on source tile");
                 return MoveResult::DidntMove;

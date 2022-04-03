@@ -251,6 +251,7 @@ async fn main() {
                 {
                     None
                 } else if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
+                    #[allow(clippy::if_then_some_else_none)] // that's unreadable
                     if Instant::now().duration_since(last_nobody_connected)
                         > Duration::from_secs(60)
                     {
@@ -263,10 +264,8 @@ async fn main() {
                     None
                 }
             });
-            for id_opt in join_all(to_remove).await {
-                if let Some(id) = id_opt {
-                    games.remove(&id);
-                }
+            for id in join_all(to_remove).await.into_iter().flatten() {
+                games.remove(&id);
             }
         }
     });

@@ -6,7 +6,7 @@ use std::{
 use roborally_structs::{
     game_map::GameMap,
     position::{Direction, Position},
-    tile::{Grid, Tile, DirectionBools},
+    tile::{DirectionBools, Grid, Tile},
     tile_type::{BeltEnd, TileType},
 };
 

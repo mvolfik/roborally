@@ -1,4 +1,7 @@
-use crate::{position::{ContinuousDirection, Direction}, tile::DirectionBools};
+use crate::{
+    position::{ContinuousDirection, Direction},
+    tile::DirectionBools,
+};
 
 #[derive(Clone, Copy)]
 pub struct Effects {
@@ -8,8 +11,8 @@ pub struct Effects {
     pub scale: f64,
     /// color wheel radians
     pub hue_shift: f64,
-    /// 
-    pub only_show_sides: Option<DirectionBools>
+    ///
+    pub only_show_sides: Option<DirectionBools>,
 }
 
 impl std::fmt::Display for Effects {
@@ -62,7 +65,7 @@ impl Default for Effects {
             translate: None,
             scale: 1.0,
             hue_shift: 0.0,
-            only_show_sides: None
+            only_show_sides: None,
         }
     }
 }
