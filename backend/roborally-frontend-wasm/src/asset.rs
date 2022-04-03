@@ -92,7 +92,6 @@ impl From<&Tile> for TileAssets {
                     },
                 }];
                 for (i, is_active) in active_rounds.iter().enumerate() {
-                    
                     #[allow(clippy::cast_precision_loss)]
                     assets.push(Asset {
                         uri: format!(
@@ -100,7 +99,7 @@ impl From<&Tile> for TileAssets {
                             if *is_active { "active" } else { "inactive" }
                         ),
                         transform: Transform {
-                            translate: Some(((7 + i * 10) as f64, 6.0)),
+                            translate: Some(((2 + i * 12) as f64, 42.0)),
                             rotate: dir.to_continuous(),
                             ..Transform::default()
                         },
