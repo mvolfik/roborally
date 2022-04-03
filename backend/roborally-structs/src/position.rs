@@ -55,9 +55,9 @@ impl Direction {
         use Direction::*;
         match self {
             Up => Left,
-            Right => Up,
-            Down => Right,
             Left => Down,
+            Down => Right,
+            Right => Up,
         }
     }
 
@@ -89,9 +89,9 @@ impl ContinuousDirection {
         if rem == 0 {
             Direction::Up
         } else if rem == 1 {
-            Direction::Down
-        } else if rem == 2 {
             Direction::Right
+        } else if rem == 2 {
+            Direction::Down
         } else {
             debug_assert_eq!(rem, 3);
             Direction::Left
