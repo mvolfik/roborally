@@ -45,7 +45,7 @@ impl std::fmt::Display for Effects {
         }
         write!(f, ";")?;
         if self.hue_shift != 0.0 {
-            write!(f, "filter: hue-rotate({});", self.hue_shift)?;
+            write!(f, "filter: hue-rotate({}rad);", self.hue_shift)?;
         }
         if let Some(sides) = self.only_show_sides {
             write!(
