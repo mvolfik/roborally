@@ -14,6 +14,7 @@
 #![warn(clippy::shadow_unrelated)]
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
+#![feature(let_chains)]
 mod asset;
 mod utils;
 

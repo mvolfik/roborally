@@ -7,7 +7,7 @@ use roborally_structs::{
     game_map::GameMap,
     position::{Direction, Position},
     tile::{DirectionBools, Grid, Tile},
-    tile_type::{BeltEnd, TileType},
+    tile_type::TileType,
 };
 
 fn checked_split_in_two<'a, T: std::str::pattern::Pattern<'a>>(
@@ -85,24 +85,6 @@ impl Parse for (Position, Direction) {
     }
 }
 
-impl Parse for BeltEnd {
-    fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
-        use BeltEnd::*;
-        Ok(match value {
-            "l" => TurnLeft,
-            "r" => TurnRight,
-            "" => Straight,
-            _ => {
-                return Err(format_parse_error(
-                    name,
-                    "invalid value for belt end",
-                    value,
-                ))
-            }
-        })
-    }
-}
-
 impl<T: Parse> Parse for Vec<T> {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
         if value.is_empty() {
@@ -161,10 +143,6 @@ impl Parse for TileType {
                     Direction::parse(
                         &char_option_to_string(chars.next()),
                         &format!("{}.direction", name),
-                    )?,
-                    BeltEnd::parse(
-                        &char_option_to_string(chars.next()),
-                        &format!("{}.belt-end", name),
                     )?,
                 ),
                 Some(_) => return Err(format_parse_error(name, "invalid belt type", value)),
@@ -260,13 +238,9 @@ fn get_parsed_prop<T: Parse>(
     propname: &str,
     verifications: &mut [(&mut dyn FnMut(&T) -> bool, &str)],
 ) -> Result<T, ParseError> {
-    let s = props.remove(propname).ok_or_else(|| {
-        format_parse_error(
-            basename,
-            "missing required prop",
-            &props.keys().copied().collect::<Vec<_>>().join(", "),
-        )
-    })?;
+    let s = props
+        .remove(propname)
+        .ok_or_else(|| format_parse_error(basename, "missing required prop", propname))?;
     let prop_fullname = &format!("{}.props.{}", basename, propname);
     let val = T::parse(s, prop_fullname)?;
     for (ver_fn, err_msg) in verifications.iter_mut() {
@@ -301,7 +275,6 @@ impl Parse for GameMap {
             .ok_or_else(|| format_parse_error(name, "no lines in input", value))?
             .split(' ')
         {
-            // todo fix
             let (key, prop_value) = checked_split_in_two(propdef, '=').ok_or_else(|| {
                 format_parse_error(
                     name,

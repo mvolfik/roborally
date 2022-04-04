@@ -1,8 +1,8 @@
 use roborally_structs::{
     game_map::GameMap,
     position::{Direction, Position},
-    tile::{DirectionBools, Grid},
-    tile_type::{BeltEnd, TileType},
+    tile::{DirectionBools, Grid, Tile},
+    tile_type::TileType,
     transform::Effects,
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
@@ -23,7 +23,7 @@ impl Asset {
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn uri(&self) -> String {
-        self.uri.clone()
+        intern(&self.uri).to_owned()
     }
     #[wasm_bindgen(getter)]
     #[must_use]
@@ -85,11 +85,10 @@ impl From<GameMap> for AssetMap {
                     )
                 })
                 .map(|(pos, tile)| {
-                    use BeltEnd::*;
                     use TileType::*;
                     let mut tile_assets = match tile.typ {
                         Void => vec![Asset {
-                            uri: intern("floor.jpg").to_owned(),
+                            uri: "floor.jpg".to_owned(),
                             effects: Effects {
                                 scale: 0.25,
                                 only_show_sides: Some(DirectionBools {
@@ -114,28 +113,51 @@ impl From<GameMap> for AssetMap {
                             },
                         }],
                         Floor => vec![Asset {
-                            uri: intern("floor.jpg").to_owned(),
+                            uri: "floor.jpg".to_owned(),
                             effects: Effects {
                                 scale: 0.25,
                                 ..Effects::random_rotate_flip()
                             },
                         }],
-                        Belt(is_fast, dir, end) => {
+                        Belt(is_fast, dir) => {
+                            let mut mask: u8 = 0b000;
+                            for (i, possibly_incoming_belt_direction) in
+                                [dir.rotated(), dir.rotated().rotated(), dir.rotated_ccw()]
+                                    .into_iter()
+                                    .enumerate()
+                            {
+                                if let Some(Tile {
+                                        typ: Belt(is_fast2, dir2),
+                                        ..
+                                    }) = m.tiles.get(possibly_incoming_belt_direction.apply_to(&pos))
+                                    && *is_fast2 == is_fast
+                                    && *dir2 == possibly_incoming_belt_direction.rotated().rotated()
+                                {
+                                    mask |= 1 << i;
+                                }
+                            }
+                            let flip_x = if mask & 0b101 == 0b100 {
+                                mask ^= 0b101;
+                                true
+                            } else {
+                                false
+                            };
+
                             vec![Asset {
                                 uri: format!(
-                                    "{}-belt-{}.png",
+                                    "{}-belt-{}.jpg",
                                     if is_fast { "fast" } else { "slow" },
-                                    if end == Straight { "straight" } else { "turn" }
+                                    mask
                                 ),
                                 effects: Effects {
-                                    flip_x: end == BeltEnd::TurnLeft,
+                                    flip_x,
                                     rotate: dir.to_continuous(),
                                     ..Effects::default()
                                 },
                             }]
                         }
                         Rotation(is_clockwise) => vec![Asset {
-                            uri: intern("rotate.png").to_owned(),
+                            uri: "rotate.png".to_owned(),
                             effects: Effects {
                                 flip_x: !is_clockwise,
                                 ..Effects::default()
@@ -143,7 +165,7 @@ impl From<GameMap> for AssetMap {
                         }],
                         PushPanel(dir, active_rounds) => {
                             let mut assets = vec![Asset {
-                                uri: intern("push-panel.png").to_owned(),
+                                uri: "push-panel.png".to_owned(),
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
                                     ..Effects::default()
@@ -170,7 +192,7 @@ impl From<GameMap> for AssetMap {
                     for (dir, is_wall) in tile.walls.to_items() {
                         if is_wall {
                             tile_assets.push(Asset {
-                                uri: intern("wall.png").to_owned(),
+                                uri: "wall.png".to_owned(),
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
                                     ..Effects::default()
@@ -186,12 +208,12 @@ impl From<GameMap> for AssetMap {
         .unwrap();
 
         assets.get_mut(m.antenna).unwrap().0.push(Asset {
-            uri: intern("antenna.png").to_owned(),
+            uri: "antenna.png".to_owned(),
             effects: Effects::default(),
         });
 
         assets.get_mut(m.reboot_token.0).unwrap().0.push(Asset {
-            uri: intern("reboot-token.png").to_owned(),
+            uri: "reboot-token.png".to_owned(),
             effects: Effects {
                 rotate: m.reboot_token.1.to_continuous(),
                 ..Effects::default()
@@ -202,7 +224,7 @@ impl From<GameMap> for AssetMap {
             assets.get_mut(*checkpoint).unwrap().0.extend(
                 [
                     Asset {
-                        uri: intern("checkpoint.png").to_owned(),
+                        uri: "checkpoint.png".to_owned(),
                         effects: Effects::default(),
                     },
                     Asset {
@@ -219,7 +241,7 @@ impl From<GameMap> for AssetMap {
 
         for (pos, dir) in m.spawn_points {
             assets.get_mut(pos).unwrap().0.push(Asset {
-                uri: intern("spawn-point.png").to_owned(),
+                uri: "spawn-point.png".to_owned(),
                 effects: Effects {
                     rotate: dir.to_continuous(),
                     ..Effects::default()
@@ -229,7 +251,7 @@ impl From<GameMap> for AssetMap {
 
         for (pos, dir) in m.lasers {
             assets.get_mut(pos).unwrap().0.push(Asset {
-                uri: intern("laser.png").to_owned(),
+                uri: "laser.png".to_owned(),
                 effects: Effects {
                     rotate: dir.to_continuous(),
                     ..Effects::default()

@@ -1,11 +1,11 @@
 Size=13,10 Antenna=0,4 Reboot=3,4:r Checkpoints=10,4;6,6;5,1;10,8 Spawnpoints=0,3:r;1,4:r;1,5:r;0,6:r Lasers=8,0:d;7,9:u
 F;F;Bsr;F;Bsl;Bsl;Bsl;Bsl;F:u;F;F;F;F
-F;F;F;F;Pd135:u;F;F:d;Bsul;Bslr;F;V;Pl135:r;F
+F;F;F;F;Pd135:u;F;F:d;Bsu;Bsl;F;V;Pl135:r;F
 F;F:u;F;F;V;Pr24:l;V;F;F;F;Pd24:u;F;Bsu
 F;F;F;F;F;F;F;Pr135:l;V;F;V;F:l;Bsu
-F:urdl;F;F:r;F;Bsdr;F;F;Pl24:r;F;Pr24:l;F;Bsrl;Bsu
-F;F;F:r;Bsd;Bsll;F;F;F:l;F;F;F;Bsur;F
+F:urdl;F;F:r;F;Bsd;F;F;Pl24:r;F;Pr24:l;F;Bsr;Bsu
+F;F;F:r;Bsd;Bsl;F;F;F:l;F;F;F;Bsu;F
 F;F;F;Bsd;F:r;V;F;V;Pl135:r;F;F;F;F
 F;F:d;F;Bsd;F;Pu24:d;F;F;F;V;Pl24:r;V;F
-F;F;F;Bsd;Pr135:l;V;F;Bsrr;Bsdl;F:u;F;Pu135:d;F
+F;F;F;Bsd;Pr135:l;V;F;Bsr;Bsd;F:u;F;Pu135:d;F
 F;F;Bsr;F;F;F;F;F:d;Bsr;Bsr;Bsr;Bsr;F

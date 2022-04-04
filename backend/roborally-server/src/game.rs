@@ -18,7 +18,8 @@ use roborally_structs::{
     game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState, RegisterMovePhase},
     logging::{debug, info},
     position::{Direction, Position},
-    tile_type::{BeltEnd, TileType},
+    tile::Tile,
+    tile_type::TileType,
     transport::ServerMessage,
 };
 use tokio::{sync::RwLock, time::sleep};
@@ -558,36 +559,29 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
             FastBelts => {
                 for player_i in player_i_sorted_by_priority {
                     for _ in 0..2 {
-                        let mut game = game_arc.write().await;
+                        let mut guard = game_arc.write().await;
+                        let game = &mut *guard;
                         let pos = game.players.get(player_i).unwrap().public_state.position;
-                        if let TileType::Belt(true, dir, end) = game.map.tiles.get(pos).unwrap().typ
-                        {
+                        if let TileType::Belt(true, dir) = game.map.tiles.get(pos).unwrap().typ {
                             debug!("Moving player {} on a fast belt", player_i);
                             let moved = game.mov(player_i, false, Some(dir));
                             if (moved == MoveResult::Moved { rebooted: false }) {
-                                match end {
-                                    BeltEnd::Straight => {}
-                                    BeltEnd::TurnLeft => {
-                                        let player_public_state = &mut game
-                                            .players
-                                            .get_mut(player_i)
-                                            .unwrap()
-                                            .public_state;
-                                        player_public_state.direction =
-                                            player_public_state.direction.rotated_ccw();
-                                    }
-                                    BeltEnd::TurnRight => {
-                                        let player_public_state = &mut game
-                                            .players
-                                            .get_mut(player_i)
-                                            .unwrap()
-                                            .public_state;
-                                        player_public_state.direction =
-                                            player_public_state.direction.rotated();
+                                let player_state =
+                                    &mut game.players.get_mut(player_i).unwrap().public_state;
+                                if let Some(Tile {
+                                    typ: TileType::Belt(true, dir2),
+                                    ..
+                                }) = game.map.tiles.get(player_state.position)
+                                {
+                                    if *dir2 == dir.rotated() {
+                                        player_state.direction = player_state.direction.rotated();
+                                    } else if *dir2 == dir.rotated_ccw() {
+                                        player_state.direction =
+                                            player_state.direction.rotated_ccw();
                                     }
                                 }
                             }
-                            drop(game);
+                            drop(guard);
                             notify_sleep(&mut game_arc).await;
                         }
                     }
@@ -596,29 +590,28 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
             }
             SlowBelts => {
                 for player_i in player_i_sorted_by_priority {
-                    let mut game = game_arc.write().await;
+                    let mut guard = game_arc.write().await;
+                    let game = &mut *guard;
                     let pos = game.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::Belt(false, dir, end) = game.map.tiles.get(pos).unwrap().typ {
+                    if let TileType::Belt(false, dir) = game.map.tiles.get(pos).unwrap().typ {
                         debug!("Moving player {} on a slow belt", player_i);
                         let moved = game.mov(player_i, false, Some(dir));
                         if (moved == MoveResult::Moved { rebooted: false }) {
-                            match end {
-                                BeltEnd::Straight => {}
-                                BeltEnd::TurnLeft => {
-                                    let player_public_state =
-                                        &mut game.players.get_mut(player_i).unwrap().public_state;
-                                    player_public_state.direction =
-                                        player_public_state.direction.rotated_ccw();
-                                }
-                                BeltEnd::TurnRight => {
-                                    let player_public_state =
-                                        &mut game.players.get_mut(player_i).unwrap().public_state;
-                                    player_public_state.direction =
-                                        player_public_state.direction.rotated();
+                            let player_state =
+                                &mut game.players.get_mut(player_i).unwrap().public_state;
+                            if let Some(Tile {
+                                typ: TileType::Belt(false, dir2),
+                                ..
+                            }) = game.map.tiles.get(player_state.position)
+                            {
+                                if *dir2 == dir.rotated() {
+                                    player_state.direction = player_state.direction.rotated();
+                                } else if *dir2 == dir.rotated_ccw() {
+                                    player_state.direction = player_state.direction.rotated_ccw();
                                 }
                             }
                         }
-                        drop(game);
+                        drop(guard);
                         notify_sleep(&mut game_arc).await;
                     }
                 }

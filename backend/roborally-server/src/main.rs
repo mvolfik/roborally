@@ -176,7 +176,12 @@ fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
 async fn main() {
     logging::init();
     let games_lock: Games = Games::default();
-    let maps: Maps = Arc::new(load_maps!["Test", "Dodge this", "Chop shop challenge"]);
+    let maps: Maps = Arc::new(load_maps![
+        "Test",
+        "Dodge this",
+        "Chop shop challenge",
+        "Belt playground"
+    ]);
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
     let create_games_state = || {
