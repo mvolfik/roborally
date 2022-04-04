@@ -104,11 +104,11 @@ RUN cd backend && cargo build --release --locked -p roborally-server --target x8
 FROM debian:bullseye-slim as zipper
 WORKDIR /zipper
 RUN apt-get update && apt-get install -y zip && rm -rf /var/lib/apt/lists/*
-COPY --from=node-builder /builder/roborally-frontend/dist ./roborally/www
-COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./roborally/
-RUN tar -czvf roborally-dist-linux.tar.gz roborally && rm ./roborally/roborally-server
-COPY --from=rust-server-builder-win /builder/backend/target/x86_64-pc-windows-gnu/release/roborally-server.exe ./roborally/
-RUN zip -r roborally-dist-windows.zip roborally && rm ./roborally/roborally-server.exe
+COPY --from=node-builder /builder/roborally-frontend/dist ./roborally-mvolf/www
+COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./roborally-mvolf/
+RUN tar -czvf roborally-dist-linux.tar.gz roborally-mvolf && rm ./roborally-mvolf/roborally-server
+COPY --from=rust-server-builder-win /builder/backend/target/x86_64-pc-windows-gnu/release/roborally-server.exe ./roborally-mvolf/
+RUN zip -r roborally-dist-windows.zip roborally-mvolf && rm ./roborally-mvolf/roborally-server.exe
 
 FROM debian:bullseye-slim
 WORKDIR /app

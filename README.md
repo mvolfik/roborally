@@ -7,7 +7,9 @@ Web version of the RoboRally board game – high school graduation project
 ## Build/release
 
 ```sh
-git archive -o source-code.tar.gz master && git archive -o source-code.zip master && env DOCKER_BUILDKIT=1 docker build -t roborally:dev .
+git archive --prefix roborally-mvolf/ -o source-code.tar.gz master && \
+git archive --prefix roborally-mvolf/ -o source-code.zip master && \
+env DOCKER_BUILDKIT=1 docker build -t roborally:dev . && \
 docker run --rm -p 80:80 -e PORT=80 roborally:dev
 ```
 
