@@ -103,18 +103,19 @@ RUN cd backend && cargo build --release --locked -p roborally-server --target x8
 
 FROM debian:bullseye-slim as zipper
 WORKDIR /zipper
+RUN apt-get update && apt-get install -y zip && rm -rf /var/lib/apt/lists/*
 COPY --from=node-builder /builder/roborally-frontend/dist ./roborally/www
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./roborally/
 RUN tar -czvf roborally-dist-linux.tar.gz roborally && rm ./roborally/roborally-server
 COPY --from=rust-server-builder-win /builder/backend/target/x86_64-pc-windows-gnu/release/roborally-server.exe ./roborally/
-RUN tar -czvf roborally-dist-windows.tar.gz roborally && rm ./roborally/roborally-server.exe
+RUN zip -r roborally-dist-windows.zip roborally && rm ./roborally/roborally-server.exe
 
 FROM debian:bullseye-slim
 WORKDIR /app
 
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./
 COPY --from=node-builder /builder/roborally-frontend/dist ./www
-COPY --from=zipper /zipper/roborally-dist-linux.tar.gz /zipper/roborally-dist-windows.tar.gz ./www/
-COPY ./source-code.tar.gz ./www/
+COPY --from=zipper /zipper/roborally-dist-linux.tar.gz /zipper/roborally-dist-windows.zip ./www/
+COPY ./source-code.tar.gz ./source-code.zip ./www/
 
 CMD ["./roborally-server"]
