@@ -3,7 +3,7 @@ use std::mem;
 use crate::{
     animations::Animation,
     card::Card,
-    position::{ContinuousDirection, Position},
+    position::{ContinuousDirection, Direction, Position},
 };
 use log::error;
 use serde::{Deserialize, Serialize};
@@ -182,9 +182,21 @@ impl PlayerGameStateView {
         let process_bullet = process_bullet_closure.unchecked_into::<js_sys::Function>();
         for animation in mem::take(&mut self.animations) {
             match animation {
-                Animation::BulletFlight(from, to) => {
+                Animation::BulletFlight(from, to, direction, is_from_tank) => {
+                    let args: [JsValue; 4] = [
+                        from.into(),
+                        to.into(),
+                        match direction {
+                            Direction::Up => 0_u8,
+                            Direction::Right => 1,
+                            Direction::Down => 2,
+                            Direction::Left => 3,
+                        }
+                        .into(),
+                        is_from_tank.into(),
+                    ];
                     if let Err(e) =
-                        process_bullet.call2(&JsValue::UNDEFINED, &from.into(), &to.into())
+                        process_bullet.apply(&JsValue::UNDEFINED, &args.into_iter().collect())
                     {
                         error!("Error calling process_animation_closure: {:?}", e);
                     }
@@ -208,7 +220,11 @@ impl PlayerGameStateView {
 #[cfg(feature = "client")]
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "(from: Position, to: Position) => void")]
+    // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
+    #[wasm_bindgen(
+        typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void"
+    )]
+    /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
     pub type ProcessBulletClosure;
 }
 

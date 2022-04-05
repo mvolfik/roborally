@@ -32,9 +32,7 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 
 ## TODOs
 
-- fix when bullet from map laser shoots to the same place
 - player names above robots
 - player name length limit
-- fix ping loop holding strong connection reference
 - animations: reboot, player move attempt
 - belts movement

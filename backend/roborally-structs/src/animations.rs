@@ -1,4 +1,4 @@
-use crate::position::Position;
+use crate::position::{Position, Direction};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,5 +6,6 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum Animation {
-    BulletFlight(Position, Position),
+    /// from, to, flight direction, is_from_tank
+    BulletFlight(Position, Position, Direction, bool),
 }

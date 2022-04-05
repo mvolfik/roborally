@@ -7,16 +7,14 @@
   } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-  import { readable, Readable, Writable } from "svelte/store";
+  import { readable, Readable } from "svelte/store";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
   export let hovered = undefined;
-  export let stateStore: Readable<{
-    players: number;
-    get_player: (number) => PlayerPublicStateWrapper;
-    process_animations(process_bullet_closure: typeof processBullet): void;
-  }> = readable({
+  export let stateStore: Readable<
+    Pick<PlayerGameStateView, "players" | "process_animations" | "get_player">
+  > = readable({
     players: 0,
     process_animations() {},
     get_player(): any {},
@@ -24,13 +22,41 @@
 
   let innerDiv: HTMLDivElement;
 
-  function processBullet(from: Position, to: Position) {
+  /**
+   * @type {import("frontend-wasm").}
+   */
+  function processBullet(
+    from: Position,
+    to: Position,
+    direction: 0 | 1 | 2 | 3,
+    isFromTank: boolean
+  ) {
     const bullet = document.createElement("img");
     bullet.src = new URL("../assets/bullet.png", import.meta.url);
+    let fromX = from.x + 0.5;
+    let fromY = from.y + 0.5;
+    if (!isFromTank) {
+      // apart from making the shots look a bit better, this also fixes a bug when robot stands
+      // directly on the tile with the laser, and therefore no transition happens
+      if (direction === 0) {
+        // shooting up -> start a bit more down
+        fromY += 0.4;
+      } else if (direction === 1) {
+        // right
+        fromX -= 0.4;
+      } else if (direction === 2) {
+        // down
+        fromY -= 0.4;
+      } else {
+        // left
+        fromX += 0.4;
+      }
+    }
+
     bullet.style = `
       position: absolute;
-      left: ${(from.x + 0.5) * 64}px;
-      top: ${(from.y + 0.5) * 64}px;
+      left: ${fromX * 64}px;
+      top: ${fromY * 64}px;
       transform: translate(-50%, -50%);
       transition-property: left, top;
       transition: 1s linear;`;
@@ -87,11 +113,7 @@
             {#each map.get(x, y).into_jsarray() as asset}
               {@const assetUri = getTexture(asset.uri)}
               {#if assetUri !== undefined}
-                <img
-                  style={asset.style}
-                  src={assetUri}
-                  alt=""
-                />
+                <img style={asset.style} src={assetUri} alt="" />
               {/if}
             {/each}
             {#if hovered && hovered.x === x && hovered.y === y}
@@ -102,14 +124,10 @@
       {/each}
       {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player}
         {@const pos = player.position}
-        <img
-          src={robot}
-          alt="Robot"
-          class="robot"
-          style={player.style}
-          style:--x={pos.x}
-          style:--y={pos.y}
-        />
+        <div class="robot" style:--x={pos.x} style:--y={pos.y}>
+          <img src={robot} alt="Robot" style={player.style} />
+          <span>{player.name}</span>
+        </div>
       {/each}
     </div>
   </Zoomable>
@@ -117,11 +135,15 @@
 
 <style>
   .robot {
-    position: absolute;
     top: calc(64px * var(--y));
     left: calc(64px * var(--x));
-    transition: all 1s ease-in-out;
     pointer-events: none;
+  }
+  .robot,
+  .robot img,
+  .robot span {
+    position: absolute;
+    transition: all 1s ease-in-out;
   }
   div.outer {
     height: 100%;
