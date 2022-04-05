@@ -74,9 +74,12 @@ async fn new_game_handler(
         name,
     }: NewGameData,
 ) -> impl Reply {
+    if name.len() > 50 {
+        return with_status("Game name is too long".to_owned(), StatusCode::BAD_REQUEST);
+    }
     let Some(map) = maps.get(&map_name)
     else {
-        return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST)
+        return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST);
     };
     let game = match Game::new(map.clone(), players) {
         Ok(g) => g,

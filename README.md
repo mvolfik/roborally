@@ -32,7 +32,6 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 
 ## TODOs
 
-- player name length limit
 - animations: reboot, player move attempt
 - belts movement
 

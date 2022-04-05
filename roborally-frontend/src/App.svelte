@@ -291,7 +291,11 @@
   }
 
   .map-preview {
-    width: 70vw;
-    height: 70vh;
+    width: 80vw;
+    height: 80vh;
+  }
+
+  select {
+    max-width: 50vw;
   }
 </style>

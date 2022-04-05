@@ -149,8 +149,9 @@
           <div style:--player-i={player_i}>
             {#if player_i === seat}
               <div class="name self">
-                {name} (You) <button on:click={() => disconnect()}>Disconnect</button>
+                You ({name})
               </div>
+              <button on:click={() => disconnect()}>Disconnect</button>
             {:else if name === undefined}
               <div class="name disconnected">
                 Seat {player_i + 1} (disconnected)
@@ -227,6 +228,12 @@
     border-radius: 4px;
   }
 
+  .name {
+    max-width: 25vw;
+    text-overflow: ellipsis;
+    overflow: clip;
+    white-space: nowrap;
+  }
   .name.self {
     color: rgb(15, 187, 230);
   }
