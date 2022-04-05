@@ -1,4 +1,6 @@
-use crate::{card::Card, game_map::GameMap, game_state::PlayerGameStateView};
+use crate::{
+    animations::Animation, card::Card, game_map::GameMap, game_state::PlayerGameStateView,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +11,7 @@ pub enum ServerMessage {
     InitInfo(GameMap),
     SetState(PlayerGameStateView),
     Notice(String),
+    Animations(Vec<Animation>),
 }
 
 #[cfg_attr(feature = "server", derive(Deserialize, Debug))]

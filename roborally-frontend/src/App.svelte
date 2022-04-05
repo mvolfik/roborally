@@ -42,11 +42,13 @@
   }
 
   async function handleCreateGame() {
+    if (state.state !== "creatingGame") return;
+
     const r = await fetch("/api/new-game", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        players: state.players_n,
+        players: state.players_n.toString(),
         map_name: state.chosenMap,
         name: state.name,
       }),
@@ -186,6 +188,7 @@
         disabled={state.seats[state.chosenSeat] !== null ||
           state.name.length === 0}
         on:click={() => {
+          if (state.state !== "choosingSeat") return;
           state = {
             state: "inGame",
             name: state.name,
@@ -230,7 +233,9 @@
         </label>
         <button
           disabled={state.chosenMap === undefined}
-          on:click={() => (previewedMap = state.chosenMap)}>Preview map</button
+          on:click={() => {
+            if (state.state === "creatingGame") previewedMap = state.chosenMap;
+          }}>Preview map</button
         >
       {/await}
       <button

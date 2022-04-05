@@ -13,10 +13,9 @@
   export let map: AssetMap;
   export let hovered = undefined;
   export let stateStore: Readable<
-    Pick<PlayerGameStateView, "players" | "process_animations" | "get_player">
+    Pick<PlayerGameStateView, "players" | "get_player">
   > = readable({
     players: 0,
-    process_animations() {},
     get_player(): any {},
   });
 
@@ -25,7 +24,7 @@
   /**
    * @type {import("frontend-wasm").}
    */
-  function processBullet(
+  export function handleBullet(
     from: Position,
     to: Position,
     direction: 0 | 1 | 2 | 3,
@@ -74,8 +73,6 @@
       });
     });
   }
-
-  $: $stateStore.process_animations(processBullet);
 
   let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
   $: {

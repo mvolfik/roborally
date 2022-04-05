@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     AssetMap,
+    CardWrapper,
     GamePhase,
     MessageProcessor,
     PlayerGameStateView,
@@ -20,7 +21,13 @@
   let connection: WebSocket;
   let stateStore: Writable<PlayerGameStateView> = writable(undefined);
   let map: AssetMap;
-  function handleProgrammingDone(e: CustomEvent) {
+  let mapComponent: Map;
+
+  function handleProgrammingDone(
+    e: CustomEvent<
+      [CardWrapper, CardWrapper, CardWrapper, CardWrapper, CardWrapper]
+    >
+  ) {
     connection.send(
       MessageProcessor.create_program_cards_message(...e.detail).buffer
     );
@@ -30,7 +37,8 @@
     MessageProcessor.handle_message(
       new Uint8Array(e.data),
       stateStore.set,
-      alert
+      alert,
+      mapComponent?.handleBullet ?? (() => {})
     );
   }
 
@@ -95,7 +103,7 @@
     <p>Loading...</p>
   {:else}
     <div class="map">
-      <Map {map} {stateStore} />
+      <Map {map} {stateStore} bind:this={mapComponent} />
     </div>
     {#key phase === GamePhase.Moving}
       <div class="phase-indicator" transition:fly={{ x: -200 }}>
@@ -117,7 +125,6 @@
             <span>Push panels</span>
             <span>Rotations</span>
             <span>Lasers</span>
-            <span>Robot lasers</span>
             <span>Checkpoints</span>
           </div>
         {:else}

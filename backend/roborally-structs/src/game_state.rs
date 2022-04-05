@@ -1,18 +1,14 @@
-use std::mem;
-
 use crate::{
-    animations::Animation,
     card::Card,
-    position::{ContinuousDirection, Direction, Position},
+    position::{ContinuousDirection, Position},
 };
-use log::error;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "client")]
 use crate::card::wrapper::CardWrapper;
 
 #[cfg(feature = "client")]
-use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "server", derive(Serialize))]
@@ -24,7 +20,6 @@ pub enum RegisterMovePhase {
     PushPanels,
     Rotations,
     Lasers,
-    RobotLasers,
     Checkpoints,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,7 +58,6 @@ pub struct PlayerGameStateView {
     phase: GamePhaseView,
     hand: Vec<Card>,
     player_names: Vec<Option<String>>,
-    animations: Vec<Animation>,
 }
 
 #[cfg(feature = "server")]
@@ -74,14 +68,12 @@ impl PlayerGameStateView {
         phase: GamePhaseView,
         hand: Vec<Card>,
         player_names: Vec<Option<String>>,
-        animations: Vec<Animation>,
     ) -> Self {
         Self {
             player_states,
             phase,
             hand,
             player_names,
-            animations,
         }
     }
 }
@@ -178,33 +170,6 @@ impl PlayerGameStateView {
         }
     }
 
-    pub fn process_animations(&mut self, process_bullet_closure: ProcessBulletClosure) {
-        let process_bullet = process_bullet_closure.unchecked_into::<js_sys::Function>();
-        for animation in mem::take(&mut self.animations) {
-            match animation {
-                Animation::BulletFlight(from, to, direction, is_from_tank) => {
-                    let args: [JsValue; 4] = [
-                        from.into(),
-                        to.into(),
-                        match direction {
-                            Direction::Up => 0_u8,
-                            Direction::Right => 1,
-                            Direction::Down => 2,
-                            Direction::Left => 3,
-                        }
-                        .into(),
-                        is_from_tank.into(),
-                    ];
-                    if let Err(e) =
-                        process_bullet.apply(&JsValue::UNDEFINED, &args.into_iter().collect())
-                    {
-                        error!("Error calling process_animation_closure: {:?}", e);
-                    }
-                }
-            }
-        }
-    }
-
     pub fn get_winner_name(&self) -> Option<String> {
         if let GamePhaseView::HasWinner(player_i) = &self.phase {
             Some(match self.player_names.get(*player_i).cloned().flatten() {
@@ -215,15 +180,6 @@ impl PlayerGameStateView {
             None
         }
     }
-}
-
-#[cfg(feature = "client")]
-#[wasm_bindgen]
-extern "C" {
-    // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
-    #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
-    /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
-    pub type ProcessBulletClosure;
 }
 
 #[cfg(feature = "client")]

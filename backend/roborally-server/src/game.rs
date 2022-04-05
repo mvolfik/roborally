@@ -122,15 +122,10 @@ pub struct Game {
     pub map: GameMap,
     pub players: Vec<Player>,
     pub phase: GamePhase,
-    pub animations: Vec<Animation>,
 }
 
 impl Game {
-    pub fn get_state_for_player(
-        &mut self,
-        seat: usize,
-        animations: Vec<Animation>,
-    ) -> PlayerGameStateView {
+    pub fn get_state_for_player(&mut self, seat: usize) -> PlayerGameStateView {
         let this_player_state = self.players.get(seat).unwrap();
         let phase: GamePhaseView = match &self.phase {
             GamePhase::Moving {
@@ -160,7 +155,6 @@ impl Game {
                 .iter()
                 .map(|p| p.connected.upgrade().map(|c| c.player_name.clone()))
                 .collect(),
-            animations,
         )
     }
 
@@ -175,12 +169,10 @@ impl Game {
             map,
             players,
             phase: GamePhase::Programming(repeat(None).take(players_n).collect()),
-            animations: Vec::new(),
         })
     }
 
     pub async fn notify_update(&mut self) {
-        let animations = mem::take(&mut self.animations);
         // we need a separate map and collect to satisfy `self` borrow rules
         #[allow(clippy::needless_collect)]
         let connections: Vec<_> = self
@@ -192,9 +184,7 @@ impl Game {
         let futures = connections
             .into_iter()
             // two separate closures to avoid using self in async (again, borrow rules)
-            .filter_map(|(i, conn_opt)| {
-                conn_opt.map(|conn| (conn, self.get_state_for_player(i, animations.clone())))
-            })
+            .filter_map(|(i, conn_opt)| conn_opt.map(|conn| (conn, self.get_state_for_player(i))))
             .map(async move |(conn, msg)| {
                 conn.socket
                     .write()
@@ -664,11 +654,11 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
             // - for map lasers, the position increment is moved to the end of the loop, as we might
             //   already hit a robot on the tile we're shooting from
             Lasers => {
-                let lasers = game_arc.read().await.map.lasers.clone();
-                for (start_pos, bullet_dir) in lasers {
-                    let mut guard = game_arc.write().await;
-                    let game = &mut *guard;
-                    let mut bullet_pos = start_pos;
+                let mut guard = game_arc.write().await;
+                let game = &mut *guard;
+                let mut animations = Vec::new();
+                for (start_pos, bullet_dir) in &game.map.lasers {
+                    let mut bullet_pos = *start_pos;
                     let mut tile = *game.map.tiles.get(bullet_pos).unwrap();
                     'map_bullet_flight: loop {
                         for player2 in &mut game.players {
@@ -678,16 +668,17 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
-                                game.animations.push(Animation::BulletFlight(
-                                    start_pos, bullet_pos, bullet_dir, false,
+                                animations.push(Animation::BulletFlight(
+                                    *start_pos,
+                                    bullet_pos,
+                                    *bullet_dir,
+                                    false,
                                 ));
-                                drop(guard);
-                                notify_sleep(&mut game_arc).await;
                                 break 'map_bullet_flight;
                             }
                         }
                         // wall on the tile we're leaving?
-                        if tile.walls.get(&bullet_dir) {
+                        if tile.walls.get(bullet_dir) {
                             break;
                         }
                         bullet_pos = bullet_dir.apply_to(&bullet_pos);
@@ -702,12 +693,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                         }
                     }
                 }
-                RobotLasers
-            }
-            RobotLasers => {
                 for player_i in player_i_sorted_by_priority {
-                    let mut guard = game_arc.write().await;
-                    let game = &mut *guard;
                     let player_state = game.players.get(player_i).unwrap().public_state;
                     if player_state.is_rebooting {
                         continue;
@@ -739,16 +725,31 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
-                                game.animations.push(Animation::BulletFlight(
+                                animations.push(Animation::BulletFlight(
                                     start_pos, bullet_pos, bullet_dir, true,
                                 ));
-                                drop(guard);
-                                notify_sleep(&mut game_arc).await;
                                 break 'robot_bullet_flight;
                             }
                         }
                     }
                 }
+                let futures = game
+                    .players
+                    .iter()
+                    .filter_map(|p: &Player| {
+                        p.connected.upgrade().map(|x|
+                        // need to clone the animations here, otherwise some weird lifetime-in-async issue occurs
+                        // (shows obscure message, probably related https://github.com/rust-lang/rust/issues/89976)
+                         (x, ServerMessage::Animations(animations.clone())))
+                    })
+                    .into_iter()
+                    .map(async move |(player, msg)| {
+                        player.socket.write().await.send_message(msg).await;
+                    });
+                join_all(futures).await;
+                drop(guard);
+                notify_sleep(&mut game_arc).await;
+
                 Checkpoints
             }
             Checkpoints => {

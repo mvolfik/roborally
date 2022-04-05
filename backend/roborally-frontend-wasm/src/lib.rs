@@ -20,10 +20,12 @@ mod utils;
 
 use crate::asset::AssetMap;
 use roborally_structs::{
+    animations::Animation,
     card::wrapper::CardWrapper,
     game_map::GameMap,
     game_state::PlayerGameStateView,
-    logging::{self, debug},
+    logging::{self, debug, error},
+    position::Direction,
     transport::{ClientMessage, ServerMessage},
 };
 
@@ -46,6 +48,11 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "(msg: string) => void")]
     pub type NotifyFunction;
+
+    // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
+    #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
+    /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
+    pub type ProcessBulletClosure;
 }
 
 impl SetStateFunction {
@@ -75,9 +82,7 @@ impl MessageProcessor {
         {
             ServerMessage::Notice(msg) => Err(msg.into()),
             ServerMessage::InitInfo(map) => Ok(map.into()),
-            ServerMessage::SetState(_) => {
-                Err("Unexpected error when initializing connection".into())
-            }
+            _ => Err("Unexpected error when initializing connection".into()),
         }
     }
 
@@ -85,6 +90,7 @@ impl MessageProcessor {
         bytes: &[u8],
         set_state: SetStateFunction,
         notify: NotifyFunction,
+        process_bullet_closure: ProcessBulletClosure,
     ) -> Result<(), JsValue> {
         match rmp_serde::from_slice::<ServerMessage>(bytes)
             .map_err::<JsValue, _>(|e| e.to_string().into())?
@@ -93,6 +99,32 @@ impl MessageProcessor {
             ServerMessage::SetState(state) => {
                 debug!("{:?}", &state);
                 set_state.call(state)?;
+            }
+            ServerMessage::Animations(animations) => {
+                let process_bullet = process_bullet_closure.unchecked_into::<js_sys::Function>();
+                for animation in animations {
+                    match animation {
+                        Animation::BulletFlight(from, to, direction, is_from_tank) => {
+                            let args: [JsValue; 4] = [
+                                from.into(),
+                                to.into(),
+                                match direction {
+                                    Direction::Up => 0_u8,
+                                    Direction::Right => 1,
+                                    Direction::Down => 2,
+                                    Direction::Left => 3,
+                                }
+                                .into(),
+                                is_from_tank.into(),
+                            ];
+                            if let Err(e) = process_bullet
+                                .apply(&JsValue::UNDEFINED, &args.into_iter().collect())
+                            {
+                                error!("Error calling process_animation_closure: {:?}", e);
+                            }
+                        }
+                    }
+                }
             }
             ServerMessage::InitInfo(_) => {
                 notify.call("Error: unexpected message from server".to_owned())?;
