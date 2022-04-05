@@ -112,24 +112,74 @@ struct GameListItem {
     name: String,
 }
 
+enum GameListResult {
+    ListItem(GameListItem),
+    Cleanup(u64),
+}
+
 async fn list_games_handler(games_lock: Games) -> impl Reply {
-    let games = games_lock.read().await;
-    let futures = games
-        .iter()
-        .map(async move |(id, index_entry)| GameListItem {
-            id: id.to_string(),
-            seats: index_entry
-                .game
-                .read()
-                .await
-                .players
-                .iter()
-                .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
-                .collect(),
-            map_name: index_entry.map_name.clone(),
-            name: index_entry.name.clone(),
-        });
-    warp::reply::json(&join_all(futures).await)
+    let mut games = games_lock.write().await;
+    let games_futures: Vec<_> = games
+        .iter_mut()
+        .map(async move |(id, index_entry)| {
+            let game = index_entry.game.read().await;
+            let seats_futures =
+                game.players
+                    .iter()
+                    .map(async move |player| match player.connected.upgrade() {
+                        Some(connection) => {
+                            if connection.last_pong.read().await.elapsed() > Duration::from_secs(20)
+                            {
+                                // spawn cleanup as a task to respond to list_games request faster
+                                tokio::spawn(async move {
+                                    connection
+                                        .socket
+                                        .write()
+                                        .await
+                                        .close_with_notice(
+                                            "No response from client for over 20 seconds"
+                                                .to_owned(),
+                                        )
+                                        .await;
+                                });
+                                None
+                            } else {
+                                Some(connection.player_name.clone())
+                            }
+                        }
+                        None => None,
+                    });
+            let seats: Vec<Option<String>> = join_all(seats_futures).await;
+            if seats.iter().all(Option::is_none) {
+                if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
+                    if last_nobody_connected.elapsed() > Duration::from_secs(60) {
+                        return GameListResult::Cleanup(*id);
+                    }
+                } else {
+                    index_entry.last_nobody_connected = Some(Instant::now());
+                }
+            }
+            GameListResult::ListItem(GameListItem {
+                id: id.to_string(),
+                seats,
+                map_name: index_entry.map_name.clone(),
+                name: index_entry.name.clone(),
+            })
+        })
+        .collect();
+
+    let games: Vec<_> = join_all(games_futures)
+        .await
+        .into_iter()
+        .filter_map(|list_result| match list_result {
+            GameListResult::ListItem(item) => Some(item),
+            GameListResult::Cleanup(id) => {
+                games.remove(&id);
+                None
+            }
+        })
+        .collect();
+    warp::reply::json(&games)
 }
 
 struct GameIndexEntry {
@@ -242,39 +292,6 @@ async fn main() {
         None => ([127, 0, 0, 1], 8080),
     };
     let server = warp::serve(routes).run(ip_port);
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            let mut games = games_lock.write().await;
-            let to_remove = games.iter_mut().map(async move |(id, index_entry)| {
-                if index_entry
-                    .game
-                    .read()
-                    .await
-                    .players
-                    .iter()
-                    .any(|p| p.connected.strong_count() > 0)
-                {
-                    None
-                } else if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
-                    #[allow(clippy::if_then_some_else_none)] // that's unreadable
-                    if Instant::now().duration_since(last_nobody_connected)
-                        > Duration::from_secs(60)
-                    {
-                        Some(*id)
-                    } else {
-                        None
-                    }
-                } else {
-                    index_entry.last_nobody_connected = Some(Instant::now());
-                    None
-                }
-            });
-            for id in join_all(to_remove).await.into_iter().flatten() {
-                games.remove(&id);
-            }
-        }
-    });
     eprintln!("Running at {:?}", ip_port);
     server.await;
 }

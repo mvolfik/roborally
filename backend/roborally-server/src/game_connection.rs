@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -8,7 +8,7 @@ use roborally_structs::{
     logging::{debug, error, info, warn},
     transport::{ClientMessage, ServerMessage},
 };
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time::Instant};
 use warp::ws::{Message, WebSocket};
 
 use crate::game::{run_moving_phase, Game, GamePhase};
@@ -38,14 +38,16 @@ impl SocketWriter {
 
 #[derive(Debug)]
 pub struct PlayerConnection {
-    pub name: String,
+    pub player_name: String,
     pub game: Arc<RwLock<Game>>,
     pub seat: usize,
     pub socket: RwLock<SocketWriter>,
+    pub last_pong: RwLock<Instant>,
 }
 
-async fn receive_client_message(
+async fn receive_client_message<F: FnMut() -> U, U: Future<Output = ()>>(
     reader: &mut SplitStream<WebSocket>,
+    mut on_pong: F,
 ) -> Result<ClientMessage, Option<String>> {
     loop {
         // if None, the connection is already closed. In all other cases, do close_with_notice and return None
@@ -57,7 +59,11 @@ async fn receive_client_message(
             // this would be cleaner as recursion, but that is messy with async function
             if ws_msg.is_close() {
                 Err(None)
-            } else if ws_msg.is_pong() || ws_msg.is_ping() {
+            } else if ws_msg.is_pong() {
+                on_pong().await;
+                // recursion
+                continue;
+            } else if ws_msg.is_ping() {
                 // recursion
                 continue;
             } else if ws_msg.is_binary() {
@@ -82,7 +88,7 @@ impl PlayerConnection {
             return;
         };
 
-        let (player_name, seat) = match receive_client_message(&mut reader).await {
+        let (player_name, seat) = match receive_client_message(&mut reader, async || {}).await {
             Err(err_opt) => {
                 if let Some(e) = err_opt {
                     writer.close_with_notice(e).await;
@@ -113,23 +119,26 @@ impl PlayerConnection {
             };
             if let Some(p) = player.connected.upgrade() {
                 writer
-                    .close_with_notice(format!("{} is already connected to this seat", p.name))
+                    .close_with_notice(format!("{} is already connected to this seat", p.player_name))
                     .await;
                 return;
             }
             writer.send_message(ServerMessage::InitInfo(map)).await;
 
             let conn = Arc::new(Self {
-                name: player_name,
+                player_name,
                 game: Arc::clone(&game_lock),
                 seat,
                 socket: RwLock::new(writer),
+                last_pong: RwLock::new(Instant::now()),
             });
             player.connected = Arc::downgrade(&conn);
             game.notify_update().await;
             conn
         };
         let self_weak = Arc::downgrade(&self_arc);
+
+        // ping loop
         tokio::spawn(async move {
             while let Some(ping_conn) = self_weak.upgrade() {
                 if let Err(e) = ping_conn
@@ -145,12 +154,18 @@ impl PlayerConnection {
                 }
                 // free the Arc, only leave the weak_ref so that the seat is freed as soon as player disconnects
                 drop(ping_conn);
-                tokio::time::sleep(Duration::from_secs(15)).await;
+                tokio::time::sleep(Duration::from_secs(10)).await;
             }
             debug!("Ending ping loop");
         });
+
+        // reader loop
         tokio::spawn(async move {
-            while let Some(msg) = match receive_client_message(&mut reader).await {
+            while let Some(msg) = match receive_client_message(&mut reader, async || {
+                *self_arc.last_pong.write().await = Instant::now()
+            })
+            .await
+            {
                 Err(err_opt) => {
                     if let Some(e) = err_opt {
                         self_arc.socket.write().await.close_with_notice(e).await;
@@ -195,7 +210,7 @@ impl PlayerConnection {
                     }
                 }
             }
-            info!("Ending receive loop for player {}", self_arc.name);
+            info!("Ending receive loop for player {}", self_arc.player_name);
         });
     }
 }

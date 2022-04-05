@@ -158,7 +158,7 @@ impl Game {
             this_player_state.hand.clone(),
             self.players
                 .iter()
-                .map(|p| p.connected.upgrade().map(|c| c.name.clone()))
+                .map(|p| p.connected.upgrade().map(|c| c.player_name.clone()))
                 .collect(),
             animations,
         )
@@ -675,7 +675,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                             if player2.public_state.position == bullet_pos {
                                 debug!(
                                     "Laser shot player {:?}",
-                                    player2.connected.upgrade().map(|c| c.name.clone())
+                                    player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
                                 game.animations
@@ -735,7 +735,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                 debug!(
                                     "PLayer {} shot player {:?}",
                                     player_i,
-                                    player2.connected.upgrade().map(|c| c.name.clone())
+                                    player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
                                 game.animations
@@ -789,7 +789,7 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     .upgrade()
                                     .map_or_else(
                                         || "<disconnected player>".to_owned(),
-                                        |p| p.name.clone()
+                                        |p| p.player_name.clone()
                                     )
                             );
                             game.phase = GamePhase::HasWinner(player_i);
