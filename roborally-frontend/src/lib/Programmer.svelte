@@ -166,9 +166,9 @@
   }
   .register span {
     position: absolute;
+    /* centering: top/left moves top left corner of child relative to parent size, translate moves relative to child size */
     top: 50%;
     left: 50%;
-    /* centering: translate is relative to self size, top/left moves top left corner relative to parent */
     transform: translate(-50%, -50%);
     font-size: 2vw;
     white-space: nowrap;

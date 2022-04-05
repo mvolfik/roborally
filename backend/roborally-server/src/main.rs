@@ -168,7 +168,7 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
         })
         .collect();
 
-    let games: Vec<_> = join_all(games_futures)
+    let games_list: Vec<_> = join_all(games_futures)
         .await
         .into_iter()
         .filter_map(|list_result| match list_result {
@@ -179,7 +179,7 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
             }
         })
         .collect();
-    warp::reply::json(&games)
+    warp::reply::json(&games_list)
 }
 
 struct GameIndexEntry {

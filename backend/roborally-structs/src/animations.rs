@@ -1,4 +1,4 @@
-use crate::position::{Position, Direction};
+use crate::position::{Direction, Position};
 
 use serde::{Deserialize, Serialize};
 

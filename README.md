@@ -32,7 +32,11 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 
 ## TODOs
 
-- player names above robots
 - player name length limit
 - animations: reboot, player move attempt
 - belts movement
+
+## Possible upgrades in the future
+
+- all moving phase state is generated and sent from the server in one batch, and the client
+  can play it at their own chosen speed, including the option of manual stepping

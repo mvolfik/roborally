@@ -45,7 +45,7 @@ pub struct PlayerConnection {
     pub last_pong: RwLock<Instant>,
 }
 
-async fn receive_client_message<F: FnMut() -> U, U: Future<Output = ()>>(
+async fn receive_client_message<F: FnMut() -> U + Send, U: Future<Output = ()> + Send>(
     reader: &mut SplitStream<WebSocket>,
     mut on_pong: F,
 ) -> Result<ClientMessage, Option<String>> {
@@ -119,7 +119,10 @@ impl PlayerConnection {
             };
             if let Some(p) = player.connected.upgrade() {
                 writer
-                    .close_with_notice(format!("{} is already connected to this seat", p.player_name))
+                    .close_with_notice(format!(
+                        "{} is already connected to this seat",
+                        p.player_name
+                    ))
                     .await;
                 return;
             }
@@ -162,7 +165,7 @@ impl PlayerConnection {
         // reader loop
         tokio::spawn(async move {
             while let Some(msg) = match receive_client_message(&mut reader, async || {
-                *self_arc.last_pong.write().await = Instant::now()
+                *self_arc.last_pong.write().await = Instant::now();
             })
             .await
             {
@@ -211,6 +214,9 @@ impl PlayerConnection {
                 }
             }
             info!("Ending receive loop for player {}", self_arc.player_name);
+            let game = Arc::clone(&self_arc.game);
+            drop(self_arc);
+            game.write().await.notify_update().await;
         });
     }
 }

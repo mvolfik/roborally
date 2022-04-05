@@ -221,9 +221,7 @@ impl PlayerGameStateView {
 #[wasm_bindgen]
 extern "C" {
     // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
-    #[wasm_bindgen(
-        typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void"
-    )]
+    #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
     /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
     pub type ProcessBulletClosure;
 }
@@ -256,6 +254,7 @@ mod wrapper {
             Effects {
                 rotate: self.state.direction,
                 hue_shift: self.seat as f64 * 0.9,
+                scale: 0.125,
                 ..Effects::default()
             }
             .to_string()

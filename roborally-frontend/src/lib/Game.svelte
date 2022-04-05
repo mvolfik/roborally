@@ -149,7 +149,7 @@
           <div style:--player-i={player_i}>
             {#if player_i === seat}
               <div class="name self">
-                You <button on:click={() => disconnect()}>Disconnect</button>
+                {name} (You) <button on:click={() => disconnect()}>Disconnect</button>
               </div>
             {:else if name === undefined}
               <div class="name disconnected">

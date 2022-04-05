@@ -678,8 +678,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
-                                game.animations
-                                    .push(Animation::BulletFlight(start_pos, bullet_pos, bullet_dir, false));
+                                game.animations.push(Animation::BulletFlight(
+                                    start_pos, bullet_pos, bullet_dir, false,
+                                ));
                                 drop(guard);
                                 notify_sleep(&mut game_arc).await;
                                 break 'map_bullet_flight;
@@ -738,8 +739,9 @@ pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
                                     player2.connected.upgrade().map(|c| c.player_name.clone())
                                 );
                                 player2.draw_spam();
-                                game.animations
-                                    .push(Animation::BulletFlight(start_pos, bullet_pos, bullet_dir, true));
+                                game.animations.push(Animation::BulletFlight(
+                                    start_pos, bullet_pos, bullet_dir, true,
+                                ));
                                 drop(guard);
                                 notify_sleep(&mut game_arc).await;
                                 break 'robot_bullet_flight;

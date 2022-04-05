@@ -31,10 +31,8 @@
     direction: 0 | 1 | 2 | 3,
     isFromTank: boolean
   ) {
-    const bullet = document.createElement("img");
-    bullet.src = new URL("../assets/bullet.png", import.meta.url);
-    let fromX = from.x + 0.5;
-    let fromY = from.y + 0.5;
+    let fromX = from.x;
+    let fromY = from.y;
     if (!isFromTank) {
       // apart from making the shots look a bit better, this also fixes a bug when robot stands
       // directly on the tile with the laser, and therefore no transition happens
@@ -53,21 +51,26 @@
       }
     }
 
-    bullet.style = `
-      position: absolute;
-      left: ${fromX * 64}px;
-      top: ${fromY * 64}px;
-      transform: translate(-50%, -50%);
-      transition-property: left, top;
-      transition: 1s linear;`;
-    innerDiv.appendChild(bullet);
-    bullet.addEventListener("transitionend", () => {
-      innerDiv.removeChild(bullet);
-    });
     requestAnimationFrame(() => {
+      const bullet = document.createElement("img");
+      bullet.src = new URL("../assets/bullet.png", import.meta.url).toString();
+      bullet.style.cssText = `
+        position: absolute;
+        --tile-x: ${fromX};
+        --tile-y: ${fromY};
+        left: calc((var(--tile-x) + 0.5) * var(--tile-size));
+        top: calc((var(--tile-y) + 0.5) * var(--tile-size));
+        transform: translate(-50%, -50%);
+        transition-property: left, top;
+        transition: 1s linear;`;
+
+      innerDiv.appendChild(bullet);
+      bullet.addEventListener("transitionend", () => {
+        innerDiv.removeChild(bullet);
+      });
       requestAnimationFrame(() => {
-        bullet.style.left = `${(to.x + 0.5) * 64}px`;
-        bullet.style.top = `${(to.y + 0.5) * 64}px`;
+        bullet.style.setProperty("--tile-x", to.x.toString());
+        bullet.style.setProperty("--tile-y", to.y.toString());
       });
     });
   }
@@ -126,7 +129,9 @@
         {@const pos = player.position}
         <div class="robot" style:--x={pos.x} style:--y={pos.y}>
           <img src={robot} alt="Robot" style={player.style} />
-          <span>{player.name}</span>
+          {#if player.name !== undefined}
+            <div>{player.name}</div>
+          {/if}
         </div>
       {/each}
     </div>
@@ -135,25 +140,39 @@
 
 <style>
   .robot {
-    top: calc(64px * var(--y));
-    left: calc(64px * var(--x));
+    top: calc(var(--tile-size) * var(--y));
+    left: calc(var(--tile-size) * var(--x));
     pointer-events: none;
   }
   .robot,
-  .robot img,
-  .robot span {
+  .robot img {
     position: absolute;
     transition: all 1s ease-in-out;
+    transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
+  }
+  .robot > div {
+    position: absolute;
+    width: max-content;
+    background-color: #666b;
+    color: white;
+    padding: 2px 5px;
+    border-radius: 3px;
+    top: -8px;
+
+    /* centering: left moves top left corner of child relative to parent size, translate moves relative to child size */
+    left: calc(var(--tile-size) / 2);
+    transform: translateX(-50%);
   }
   div.outer {
     height: 100%;
     width: 100%;
     background-image: radial-gradient(#222, #666);
+    --tile-size: 64px;
   }
   div.grid {
     display: grid;
-    grid-auto-rows: 64px;
-    grid-auto-columns: 64px;
+    grid-auto-rows: var(--tile-size);
+    grid-auto-columns: var(--tile-size);
   }
   div.tile {
     height: 100%;
@@ -163,7 +182,7 @@
   }
   div.tile > * {
     position: absolute;
-    transform-origin: 32px 32px;
+    transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
   }
   div.hoverMarker {
     height: 100%;
