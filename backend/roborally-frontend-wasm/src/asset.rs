@@ -152,6 +152,7 @@ impl From<GameMap> for AssetMap {
                                 effects: Effects {
                                     flip_x,
                                     rotate: dir.to_continuous(),
+                                    scale: if is_fast { 1.0 } else { 0.125 },
                                     ..Effects::default()
                                 },
                             }]
