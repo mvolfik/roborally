@@ -1,14 +1,11 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use futures::{
-    stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
-};
+use futures::{stream::SplitSink, SinkExt, Stream, StreamExt};
 use roborally_structs::{
     logging::{debug, error, info, warn},
     transport::{ClientMessage, ServerMessage},
 };
-use tokio::{sync::RwLock, time::Instant};
+use tokio::{sync::RwLock, time::timeout};
 use warp::ws::{Message, WebSocket};
 
 use crate::game::{run_moving_phase, Game, GamePhase};
@@ -18,20 +15,18 @@ pub struct SocketWriter(SplitSink<WebSocket, Message>);
 
 impl SocketWriter {
     pub async fn close_with_notice(&mut self, msg: String) {
-        warn!("Closing connection with message: {}", &msg);
+        info!("Closing connection with message: {}", &msg);
         self.send_message(ServerMessage::Notice(msg)).await;
-        self.0
-            .send(Message::close())
-            .await
-            .unwrap_or_else(|e| warn!("Error when closing connection: {}", e));
+        if let Err(e) = self.0.send(Message::close()).await {
+            warn!("Error when closing connection: {}", e);
+        }
     }
 
     pub async fn send_message(&mut self, msg: ServerMessage) {
         if let Ok(vec) = rmp_serde::to_vec(&msg) {
-            self.0
-                .send(Message::binary(vec))
-                .await
-                .unwrap_or_else(|e| error!("Error sending message: {}", e));
+            if let Err(e) = self.0.send(Message::binary(vec)).await {
+                error!("Error sending message: {}", e);
+            }
         }
     }
 }
@@ -42,28 +37,30 @@ pub struct PlayerConnection {
     pub game: Arc<RwLock<Game>>,
     pub seat: usize,
     pub socket: RwLock<SocketWriter>,
-    pub last_pong: RwLock<Instant>,
 }
 
-async fn receive_client_message<F: FnMut() -> U + Send, U: Future<Output = ()> + Send>(
-    reader: &mut SplitStream<WebSocket>,
-    mut on_pong: F,
+async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> + Send + Unpin>(
+    reader: &mut S,
 ) -> Result<ClientMessage, Option<String>> {
     loop {
-        // if None, the connection is already closed. In all other cases, do close_with_notice and return None
-        let ws_msg = match reader.next().await.ok_or(None)? {
-            Ok(x) => x,
-            Err(e) => break Err(Some(format!("Error receiving message: {}", e))),
+        let ws_msg = match timeout(Duration::from_secs(20), reader.next()).await {
+            Ok(Some(Ok(x))) => x,
+            // various network errors
+            Ok(Some(Err(e))) => return Err(Some(format!("Error receiving message: {}", e))),
+            // most likely: connection is already closed
+            Ok(None) => return Err(None),
+            // timeout
+            Err(_) => {
+                return Err(Some(
+                    "No ping response from client for over 20 seconds".to_owned(),
+                ))
+            }
         };
-        break (
+        return {
             // this would be cleaner as recursion, but that is messy with async function
             if ws_msg.is_close() {
                 Err(None)
-            } else if ws_msg.is_pong() {
-                on_pong().await;
-                // recursion
-                continue;
-            } else if ws_msg.is_ping() {
+            } else if ws_msg.is_ping() || ws_msg.is_pong() {
                 // recursion
                 continue;
             } else if ws_msg.is_binary() {
@@ -74,7 +71,7 @@ async fn receive_client_message<F: FnMut() -> U + Send, U: Future<Output = ()> +
             } else {
                 Err(Some("Received corrupted message (unknown type)".to_owned()))
             }
-        );
+        };
     }
 }
 
@@ -88,7 +85,7 @@ impl PlayerConnection {
             return;
         };
 
-        let (player_name, seat) = match receive_client_message(&mut reader, async || {}).await {
+        let (player_name, seat) = match receive_client_message(&mut reader).await {
             Err(err_opt) => {
                 if let Some(e) = err_opt {
                     writer.close_with_notice(e).await;
@@ -133,7 +130,6 @@ impl PlayerConnection {
                 game: Arc::clone(&game_lock),
                 seat,
                 socket: RwLock::new(writer),
-                last_pong: RwLock::new(Instant::now()),
             });
             player.connected = Arc::downgrade(&conn);
             game.notify_update().await;
@@ -164,11 +160,7 @@ impl PlayerConnection {
 
         // reader loop
         tokio::spawn(async move {
-            while let Some(msg) = match receive_client_message(&mut reader, async || {
-                *self_arc.last_pong.write().await = Instant::now();
-            })
-            .await
-            {
+            while let Some(msg) = match receive_client_message(&mut reader).await {
                 Err(err_opt) => {
                     if let Some(e) = err_opt {
                         self_arc.socket.write().await.close_with_notice(e).await;

@@ -117,6 +117,19 @@ impl ContinuousDirection {
     pub fn rotated_ccw(&self) -> Self {
         Self(self.0 - 1)
     }
+
+    pub fn closest_in_given_basic_direction(&self, target: Direction) -> Self {
+        let basic_self = self.to_basic();
+        if basic_self == target {
+            *self
+        } else if basic_self.rotated() == target {
+            self.rotated()
+        } else if basic_self.rotated_ccw() == target {
+            self.rotated_ccw()
+        } else {
+            self.rotated().rotated()
+        }
+    }
 }
 
 impl Sub for ContinuousDirection {

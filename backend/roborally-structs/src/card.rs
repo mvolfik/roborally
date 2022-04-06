@@ -18,7 +18,7 @@ pub mod wrapper {
     use std::ops::Deref;
 
     use super::Card;
-    use wasm_bindgen::prelude::wasm_bindgen;
+    use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
     #[wasm_bindgen]
     pub struct CardWrapper(#[wasm_bindgen(skip)] pub Card);
@@ -29,17 +29,18 @@ pub mod wrapper {
         #[must_use]
         pub fn asset_name(&self) -> String {
             use Card::*;
-            match self.0 {
-                SPAM => "spam.png".to_owned(),
-                Move1 => "move1.png".to_owned(),
-                Move2 => "move2.png".to_owned(),
-                Move3 => "move3.png".to_owned(),
-                Reverse1 => "reverse1.png".to_owned(),
-                TurnRight => "turn-right.png".to_owned(),
-                TurnLeft => "turn-left.png".to_owned(),
-                UTurn => "u-turn.png".to_owned(),
-                Again => "again.png".to_owned(),
-            }
+            intern(match self.0 {
+                SPAM => "spam.png",
+                Move1 => "move1.png",
+                Move2 => "move2.png",
+                Move3 => "move3.png",
+                Reverse1 => "reverse1.png",
+                TurnRight => "turn-right.png",
+                TurnLeft => "turn-left.png",
+                UTurn => "u-turn.png",
+                Again => "again.png",
+            })
+            .to_owned()
         }
     }
 

@@ -65,7 +65,7 @@ impl std::fmt::Display for Effects {
                 .intersperse_with(|| ",".to_owned())
                 .collect::<String>();
             if mask.is_empty() {
-                write!(f, "opacity:0;");
+                write!(f, "opacity:0;")?;
             } else {
                 write!(
                     f,

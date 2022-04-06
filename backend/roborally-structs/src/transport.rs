@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ServerMessage {
     InitInfo(GameMap),
     SetState(PlayerGameStateView),

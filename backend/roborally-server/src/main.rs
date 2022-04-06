@@ -125,34 +125,19 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     let games_futures: Vec<_> = games
         .iter_mut()
         .map(async move |(id, index_entry)| {
-            let game = index_entry.game.read().await;
-            let seats_futures =
-                game.players
-                    .iter()
-                    .map(async move |player| match player.connected.upgrade() {
-                        Some(connection) => {
-                            if connection.last_pong.read().await.elapsed() > Duration::from_secs(20)
-                            {
-                                // spawn cleanup as a task to respond to list_games request faster
-                                tokio::spawn(async move {
-                                    connection
-                                        .socket
-                                        .write()
-                                        .await
-                                        .close_with_notice(
-                                            "No response from client for over 20 seconds"
-                                                .to_owned(),
-                                        )
-                                        .await;
-                                });
-                                None
-                            } else {
-                                Some(connection.player_name.clone())
-                            }
-                        }
-                        None => None,
-                    });
-            let seats: Vec<Option<String>> = join_all(seats_futures).await;
+            let seats: Vec<Option<String>> = index_entry
+                .game
+                .read()
+                .await
+                .players
+                .iter()
+                .map(|player| {
+                    player
+                        .connected
+                        .upgrade()
+                        .map(|conn| conn.player_name.clone())
+                })
+                .collect();
             if seats.iter().all(Option::is_none) {
                 if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
                     if last_nobody_connected.elapsed() > Duration::from_secs(60) {

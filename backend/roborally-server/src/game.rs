@@ -179,12 +179,12 @@ impl Game {
             .players
             .iter()
             .enumerate()
-            .map(|(i, player)| (i, player.connected.upgrade()))
+            .filter_map(|(i, player)| player.connected.upgrade().map(|conn| (i, conn)))
             .collect();
         let futures = connections
             .into_iter()
             // two separate closures to avoid using self in async (again, borrow rules)
-            .filter_map(|(i, conn_opt)| conn_opt.map(|conn| (conn, self.get_state_for_player(i))))
+            .map(|(player_i, conn)| (conn, self.get_state_for_player(player_i)))
             .map(async move |(conn, msg)| {
                 conn.socket
                     .write()

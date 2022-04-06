@@ -21,9 +21,6 @@
 
   let innerDiv: HTMLDivElement;
 
-  /**
-   * @type {import("frontend-wasm").}
-   */
   export function handleBullet(
     from: Position,
     to: Position,
