@@ -1,0 +1,21 @@
+Size=23,20 Antenna=0,4 Reboot=12,9:l Checkpoints=7,19;17,16;19,1;7,3;5,12;20,12 Spawnpoints=1,0:r;0,1:r;1,2:u;0,3:r;1,4:r;1,5:r;0,6:r;1,7:d;0,8:r;1,9:r Lasers=16,3:d;19,6:u;6,13:r;9,13:d;9,16:l;6,16:u
+F;F;F:r;F;Bfd;F;F;F;F;F;Bfu;F;F;F;Bsd;F;F;F;F;F;F;Bsu;F
+F;F:u;F;F;Bfd;F;Bsd;Bsl;Bsl;F;Bfu;Bfl;Bfl;Bsl;Bsl;F;F;Pd12345:u;F;F;F;Bsu;Bsu
+F;F;F:rd;Bfl;Bfl;F;Bsd;F;Bsu;F;F;F;F;F;F;Bfr;Bfr;Rcw;Rccw;Bfl;Bfl;F;F
+F;F;F;F;F;Bsd;Bsl;F;Bsu;Bsl;Bsl;Bsl;F;F;F;V;F:u;F;F;F:u;V;Bsu;F
+F:udlr;F;F:r;F;Bsd;Bsl;F;F;F;F;F;Bsu;F;F;F;F;F;Rcw;F;F;F;Bsu;F
+F;F;F:r;F;Bsd;F;F;F;F;F;Bsr;Bsu;F;F;F;F;F;F;Rccw;F;F;Bsd;F
+F;F;F;F;Bsr;Bsr;Bsr;Bsd;F;Bsr;Bsu;F;F;F;F;V;F:d;F;F;F:d;V;Bsd;F
+F;F;F:ur;F;F;F;F;Bsd;F;Bsu;F;Bfr;Bfr;F;F;Bfr;Bfr;Rccw;Rcw;Bfl;Bfl;F;F
+F;F:d;F;Bfr;Bfr;Bfd;F;Bsr;Bsr;Bsu;F;Bfu;F;Bsr;Bsd;F;F;F;Pu12345;F;F;Bsr;Bsr
+F;F;F:r;F;F;Bfd;F;F;F;F;F;Bfu;F;F;Bsd;F;F;F;F;F;F;Bsu;F
+V;V;V;F;F:d;Pu15:d;F:d;F;F;F;F;Bfu;F;F;Bfd;F;F;F;F;Bsr;Bsr;Bsu;F
+V;V;V;F;F;Bfr;Bfr;Bfr;Bfr;Bfr;Bfr;Bfu;F;Bsl;Bfr;Bfr;Bfr;V;F;Bsu;F;Bfd;Bfl
+V;V;V;V;F;F;F;F;F;F;F;Bfu;F;Bsu;F;F;F;F;F;Bsu;F;Bfd;F
+V;V;V;F;F;F;F:ul;F;F;F:ur;F;Bfu;F;Bsu;Bsl;Bsl;Bsl;F;F;Bsu;F;Bfd;F
+V;V;V;F;Bfd;F;F;F;F;F;F;Bfu;F;F;F;F;F;F;F;F;F;V;F
+V;V;V;F;Bfd;F;F;F;F;F;F;Bfu;F;F;V;F;F;F;F;F;F;F;F
+V;V;V;F;Bfd;F;F:dl;F;F;F:dr;F;F;F;F;Bfu;F;Bsd;F;F;Bsr;Bsr;Bsr;Bsd
+V;V;V;F;Bfd;F;F;F;F;F;F;F;V;F;Bfu;F;Bsd;F;F;F;F;F;Bsd
+V;V;V;F;Bfd;Bfl;Bfl;Bfl;Bfl;Bfl;F;F;F;Bfr;Bfu;F;Bsd;F;V;Bfl;Bfl;Bfl;Bsr
+V;V;V;F;Bfd;F;F;F;F;F:u;Pd15:u;F:u;F;F;Bsd;Bsl;Bsl;F;F;F;F;Bfu;F

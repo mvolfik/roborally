@@ -48,26 +48,31 @@ impl std::fmt::Display for Effects {
             write!(f, "filter: hue-rotate({}rad);", self.hue_shift)?;
         }
         if let Some(sides) = self.only_show_sides {
-            write!(
-                f,
-                "mask-image:{mask};-webkit-mask-image:{mask}",
-                mask = sides
-                    .to_items()
-                    .into_iter()
-                    .filter_map(|(dir, is_shown)| {
-                        if is_shown {
-                            Some(format!(
-                                "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
-                                if self.flip_x { -1 } else { 1 }
-                                    * (dir.to_continuous() - self.rotate).get_rotation()
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .intersperse_with(|| ",".to_owned())
-                    .collect::<String>()
-            )?;
+            let mask = sides
+                .to_items()
+                .into_iter()
+                .filter_map(|(dir, is_shown)| {
+                    if is_shown {
+                        Some(format!(
+                            "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
+                            if self.flip_x { -1 } else { 1 }
+                                * (dir.to_continuous() - self.rotate).get_rotation()
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .intersperse_with(|| ",".to_owned())
+                .collect::<String>();
+            if mask.is_empty() {
+                write!(f, "opacity:0;");
+            } else {
+                write!(
+                    f,
+                    "mask-image:{mask};-webkit-mask-image:{mask};",
+                    mask = mask
+                )?;
+            }
         }
         Ok(())
     }

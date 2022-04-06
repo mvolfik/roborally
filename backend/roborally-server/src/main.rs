@@ -233,7 +233,8 @@ async fn main() {
         "Test",
         "Dodge this",
         "Chop shop challenge",
-        "Belt playground"
+        "Belt playground",
+        "Burn run"
     ]);
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
