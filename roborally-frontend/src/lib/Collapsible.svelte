@@ -5,14 +5,11 @@
     const update = (e: Pick<MediaQueryListEvent, "matches">) => {
       set(e.matches);
     };
-    const query = window.matchMedia(
-      "(max-width: 40rem) or (max-height: 40rem)"
-    );
+    const query = window.matchMedia("(max-width: 40rem), (max-height: 40rem)");
     query.addEventListener("change", update);
     update({ matches: query.matches });
     return () => query.removeEventListener("change", update);
   });
-  console.log(globalExpandedList);
 </script>
 
 <script lang="ts">
@@ -59,11 +56,7 @@
       delay: (out ? 0.5 : 2) * duration,
       duration: out ? duration : duration * 3,
       easing: out ? undefined : elasticOut,
-      css: (t: number) => {
-        const ret = `transform: ${baseTransform} scaleY(${t * 100}%)`;
-        // console.log(out, flipDirection, t, ret);
-        return ret;
-      },
+      css: (t: number) => `transform: ${baseTransform} scaleY(${t * 100}%)`,
     };
   }
 </script>

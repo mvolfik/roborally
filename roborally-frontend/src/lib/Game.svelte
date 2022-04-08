@@ -193,9 +193,11 @@
           {/if}
           <div class="checkpoints">
             Checkpoints
-            {#each [...Array(map.checkpoints)].map((_, i) => player.checkpoint > i) as checkpoint_reached}
-              <div class="indicator" class:true={checkpoint_reached} />
-            {/each}
+            <div>
+              {#each [...Array(map.checkpoints)].map((_, i) => player.checkpoint > i) as checkpoint_reached}
+                <div class="indicator" class:true={checkpoint_reached} />
+              {/each}
+            </div>
           </div>
           {#if phase === GamePhase.Moving}
             <img
@@ -284,6 +286,7 @@
     );
     color: white;
     padding: 0.7rem 1rem;
+    max-width: 60vw;
   }
 
   .player-infobox img {
@@ -293,7 +296,6 @@
   }
 
   .name {
-    max-width: 25vw;
     text-overflow: ellipsis;
     overflow: clip;
     white-space: nowrap;
@@ -305,17 +307,19 @@
     color: rgb(255, 95, 37);
   }
 
-  .checkpoints .indicator {
-    border: 0.2em solid black;
-    box-sizing: border-box;
-    border-radius: 0.3rem;
-    margin: 0 0.2em;
+  .checkpoints > div {
+    display: inline-flex;
   }
+
   .indicator {
-    width: 1em;
-    background-color: red;
     display: inline-block;
+    width: 1em;
     height: 1.1em;
+    box-sizing: border-box;
+    margin: 0 0.2em;
+    border: 0.2em solid black;
+    border-radius: 0.3rem;
+    background-color: red;
     vertical-align: text-top;
   }
 
