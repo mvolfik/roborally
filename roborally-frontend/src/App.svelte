@@ -332,7 +332,7 @@
     display: grid;
     grid-gap: 0.5rem;
     grid-template-columns: auto 1fr;
-    width: min(30rem, clamp(95vw - 4rem));
+    width: min(30rem, 95vw - 4rem);
   }
 
   form label {
