@@ -248,7 +248,7 @@
       <div style:max-width="min(20rem, 80vw)" style:padding="1rem">
         <p>Oh, hi there!</p>
         <p>
-          Hopefully, one day, in this panel you will find various hints for mvoe
+          Hopefully, one day, in this panel you will find various hints for move
           execution order, tile effects etc
         </p>
       </div>
