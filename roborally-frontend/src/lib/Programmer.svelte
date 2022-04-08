@@ -24,6 +24,7 @@
   let flipDurationMs = 200;
 
   function handleDnd(e: CustomEvent, register_i?: number) {
+    console.log(e.detail.items, e.detail.info);
     if (register_i === undefined) {
       cardsInHand = e.detail.items;
     } else {
@@ -100,18 +101,11 @@
 
 <style>
   .outer {
-    width: var(--programmer-width);
-    padding: 10px 20px 20px;
-
-    --programmer-inner-width: calc(var(--programmer-width) - 2 * 20px);
-
-    background-color: var(--seat-color);
-    border-radius: 20px 20px 0 0;
-    box-sizing: border-box;
+    padding: 0.5rem 2rem;
     display: grid;
     grid-template-columns: auto auto;
-    row-gap: 10px;
-    --card-gap: 10px;
+    row-gap: 0.2rem;
+    --card-margin: 0.5rem;
   }
   p {
     margin: 0;
@@ -121,11 +115,11 @@
   .registers-title button {
     color: #eee;
     text-align: center;
-    font-size: 1.5vw;
   }
   .registers-title button {
     background-color: rgb(0, 68, 23);
     border-radius: 7px;
+    border: 2px solid black;
     padding: 2px 5px;
   }
   .registers-title button:disabled {
@@ -133,14 +127,13 @@
   }
   .registers-title button:not(:disabled):hover {
     background-color: rgb(0, 46, 15);
-    cursor: pointer;
   }
   .hand {
-    width: calc(var(--programmer-inner-width) / 14 * 9);
+    width: calc((var(--card-width) + var(--card-margin)) * 9);
     display: flex;
   }
   .registers {
-    width: calc(var(--programmer-inner-width) / 14 * 5);
+    width: calc((var(--card-width) + var(--card-margin)) * 5);
     display: flex;
   }
 
@@ -152,14 +145,12 @@
   .register,
   .programmed,
   .programmed > img {
-    width: calc(var(--programmer-inner-width) / 14 - var(--card-gap));
-    height: calc(
-      (var(--programmer-inner-width) / 14 - var(--card-gap)) / 140 * 200
-    );
+    width: var(--card-width);
+    height: auto;
   }
   .register,
   .hand > img {
-    margin: 0 calc(var(--card-gap) / 2);
+    margin: 0 calc(var(--card-margin) / 2);
   }
   .register {
     position: relative;
@@ -170,12 +161,13 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 2vw;
+    font-size: 1.7rem;
     white-space: nowrap;
     color: black;
   }
   .programmed {
     border: 2px dashed black;
+    height: 100%;
   }
   .programmed > img {
     position: absolute;

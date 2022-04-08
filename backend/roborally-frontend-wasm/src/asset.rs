@@ -12,8 +12,8 @@ use crate::create_array_type;
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Asset {
-    uri: String,
-    effects: Effects,
+    pub(crate) uri: String,
+    pub(crate) effects: Effects,
 }
 
 create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset);
@@ -238,16 +238,6 @@ impl From<GameMap> for AssetMap {
                 ]
                 .into_iter(),
             );
-        }
-
-        for (pos, dir) in m.spawn_points {
-            assets.get_mut(pos).unwrap().0.push(Asset {
-                uri: "spawn-point.png".to_owned(),
-                effects: Effects {
-                    rotate: dir.to_continuous(),
-                    ..Effects::default()
-                },
-            });
         }
 
         for (pos, dir) in m.lasers {

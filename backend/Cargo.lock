@@ -695,6 +695,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "http",
+ "percent-encoding",
  "rand",
  "rmp-serde",
  "roborally-structs",

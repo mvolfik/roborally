@@ -34,6 +34,7 @@ docker run --rm -p 80:80 -e PORT=80 roborally:dev
 
 - animations: reboot, player move attempt
 - belts movement
+- remove special init message
 
 ## Possible upgrades in the future
 

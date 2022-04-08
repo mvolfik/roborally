@@ -60,7 +60,6 @@ pub struct PlayerGameStateView {
     player_names: Vec<Option<String>>,
 }
 
-#[cfg(feature = "server")]
 impl PlayerGameStateView {
     #[must_use]
     pub fn new(

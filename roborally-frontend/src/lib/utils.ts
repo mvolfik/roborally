@@ -1,4 +1,4 @@
-import { AssetMap, parse_map } from "frontend-wasm";
+import { ParsedMap, parse_map } from "frontend-wasm";
 
 const assets = import.meta.globEager("../assets/textures/*.???", {
   assert: { type: "url" },
@@ -24,7 +24,7 @@ export function getCardAsset(name: string): string {
   );
 }
 
-export async function fetchMap(name: string): Promise<AssetMap> {
+export async function fetchMap(name: string): Promise<ParsedMap> {
   const r = await fetch("/api/map?" + new URLSearchParams({ name }));
   return parse_map(new Uint8Array(await r.arrayBuffer()));
 }

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { readable } from "svelte/store";
+  import Dialog from "./lib/Dialog.svelte";
 
   import Game from "./lib/Game.svelte";
   import Map from "./lib/Map.svelte";
@@ -15,21 +17,21 @@
       }
     | {
         state: "choosingSeat";
-        game_id: string;
+        game_name: string;
         seats: Array<string | null>;
         chosenSeat: number | undefined;
         name: string;
       }
-    | { state: "inGame"; game_id: string; seat: number; name: string } = {
+    | { state: "inGame"; game_name: string; seat: number; name: string } = {
     state: "disconnected",
   };
   let games_promise = refresh_game_list();
 
   async function refresh_game_list(): Promise<
     {
-      id: string;
-      seats: Array<string | null>;
       name: string;
+      seats: Array<string | null>;
+      map_name: string;
     }[]
   > {
     const r = await fetch("/api/list-games");
@@ -37,8 +39,14 @@
   }
 
   async function fetchMaps(): Promise<string[]> {
-    const r = await fetch("/api/list-maps");
-    return await r.json();
+    try {
+      const r = await fetch("/api/list-maps");
+      return await r.json();
+    } catch (e) {
+      alert(`Error loading available maps: ${e}. Please try again`);
+      state = { state: "disconnected" };
+      return [];
+    }
   }
 
   async function handleCreateGame() {
@@ -55,7 +63,7 @@
     });
     let text = await r.text();
     if (r.status === 201) {
-      alert(`Success. Game id: ${text}`);
+      alert(`Game created`);
       games_promise = refresh_game_list();
       state = { state: "disconnected" };
     } else {
@@ -76,11 +84,18 @@
     }, 10000);
     return () => clearInterval(interval);
   });
+
+  const fetchMapWithErrorHandler = (mapName) =>
+    fetchMap(mapName).catch((e) => {
+      alert(`Error loading map preview: ${e}. Please try again`);
+      previewedMap = undefined;
+      throw e;
+    });
 </script>
 
 {#if state.state === "inGame"}
   <Game
-    game_id={state.game_id}
+    game_name={state.game_name}
     name={state.name}
     seat={state.seat}
     on:disconnect={() => {
@@ -97,77 +112,91 @@
     }}
   />
 {:else}
-  <p>
-    <button on:click={() => (games_promise = refresh_game_list())}
-      >Refresh list of games</button
-    >
-  </p>
-  <p>
-    <button
-      on:click={() =>
-        (state = {
-          state: "creatingGame",
-          chosenMap: undefined,
-          name: "",
-          players_n: 3,
-        })}>Create new game</button
-    >
-  </p>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Players (Connected / Total)</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#await games_promise}
-        <tr><td colspan="4">Loading...</td></tr>
-      {:then games}
-        {#if games.length === 0}
-          <tr><td colspan="4">No current games</td></tr>
-        {:else}
-          {#each games as game (game.id)}
-            <tr>
-              <td>{game.name}</td>
-              <td
-                >{game.seats.filter((x) => x !== null).length}/{game.seats
-                  .length}</td
-              >
-              <td>
-                <button
-                  on:click={() => {
-                    state = {
-                      state: "choosingSeat",
-                      game_id: game.id,
-                      seats: game.seats,
-                      chosenSeat: undefined,
-                      name: "",
-                    };
-                  }}>Connect</button
+  <div class="menu-wrapper">
+    <p>
+      <button on:click={() => (games_promise = refresh_game_list())}
+        >Refresh list of games</button
+      >
+    </p>
+    <p>
+      <button
+        on:click={() =>
+          (state = {
+            state: "creatingGame",
+            chosenMap: undefined,
+            name: "",
+            players_n: 3,
+          })}>Create new game</button
+      >
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Players (Connected / Total)</th>
+          <th>Map</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#await games_promise}
+          <tr><td colspan="4">Loading...</td></tr>
+        {:then games}
+          {#if games.length === 0}
+            <tr><td colspan="4">No current games</td></tr>
+          {:else}
+            {#each games as game (game.name)}
+              <tr>
+                <td>{game.name}</td>
+                <td
+                  >{game.seats.filter((x) => x !== null).length}/{game.seats
+                    .length}</td
                 >
-              </td>
-            </tr>
-          {/each}
-        {/if}
-      {:catch}
-        <tr
-          ><td colspan="4"
-            >Loading games failed. Please try refreshing the list</td
-          ></tr
-        >
-      {/await}
-    </tbody>
-  </table>
+                <td>{game.map_name}</td>
+                <td>
+                  <button
+                    on:click={() => {
+                      state = {
+                        state: "choosingSeat",
+                        game_name: game.name,
+                        seats: game.seats,
+                        chosenSeat: undefined,
+                        name: "",
+                      };
+                    }}>Connect</button
+                  >
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        {:catch}
+          <tr
+            ><td colspan="4"
+              >Loading games failed. Please try refreshing the list</td
+            ></tr
+          >
+        {/await}
+      </tbody>
+    </table>
+  </div>
 {/if}
 
 {#if state.state === "choosingSeat"}
-  <div
-    class="backdrop"
-    on:click|self={() => (state = { state: "disconnected" })}
+  <Dialog
+    on:close={() => (state = { state: "disconnected" })}
+    title="Connect to game {state.game_name}"
   >
-    <div class="dialog">
+    <form
+      on:submit|preventDefault={() => {
+        if (state.state !== "choosingSeat") return;
+        state = {
+          state: "inGame",
+          name: state.name,
+          game_name: state.game_name,
+          seat: state.chosenSeat,
+        };
+      }}
+    >
       <label>
         Select game seat:
         <select bind:value={state.chosenSeat}>
@@ -187,26 +216,18 @@
       <button
         disabled={state.seats[state.chosenSeat] !== null ||
           state.name.length === 0}
-        on:click={() => {
-          if (state.state !== "choosingSeat") return;
-          state = {
-            state: "inGame",
-            name: state.name,
-            game_id: state.game_id,
-            seat: state.chosenSeat,
-          };
-        }}>Connect</button
+        type="submit">Connect</button
       >
-    </div>
-  </div>
+    </form>
+  </Dialog>
 {/if}
 
 {#if state.state === "creatingGame"}
-  <div
-    class="backdrop"
-    on:click|self={() => (state = { state: "disconnected" })}
+  <Dialog
+    on:close={() => (state = { state: "disconnected" })}
+    title="Create new game"
   >
-    <div class="dialog">
+    <form on:submit|preventDefault={handleCreateGame}>
       <label>
         Game name: <input type="text" bind:value={state.name} />
       </label>
@@ -214,13 +235,14 @@
         Number of players: <input
           type="number"
           min="1"
-          max="6"
           step="1"
           bind:value={state.players_n}
         />
       </label>
       {#await fetchMaps()}
-        <span>Please wait, loading available maps</span>
+        <span style:grid-column="1/-1" style:text-align="center"
+          >Please wait, loading available maps</span
+        >
       {:then maps}
         <label>
           Select map:
@@ -233,34 +255,63 @@
         </label>
         <button
           disabled={state.chosenMap === undefined}
+          type="button"
+          style:grid-column="2"
           on:click={() => {
             if (state.state === "creatingGame") previewedMap = state.chosenMap;
           }}>Preview map</button
         >
       {/await}
       <button
+        type="submit"
         disabled={state.chosenMap === undefined || state.name.length === 0}
-        on:click={handleCreateGame}>Create</button
+        >Create</button
       >
-    </div>
-  </div>
+    </form>
+  </Dialog>
 {/if}
 
 {#if previewedMap !== undefined}
-  <div class="backdrop" on:click|self={() => (previewedMap = undefined)}>
-    <div class="dialog">
-      {#await fetchMap(previewedMap)}
-        <span>Please wait, loading map preview</span>
-      {:then map}
-        <div class="map-preview">
-          <Map {map} />
-        </div>
-      {/await}
-    </div>
-  </div>
+  <Dialog
+    on:close={() => (previewedMap = undefined)}
+    title="Map preview: {previewedMap}"
+  >
+    {#await fetchMapWithErrorHandler(previewedMap)}
+      <span>Please wait, loading map preview</span>
+    {:then map}
+      <div class="map-preview">
+        <Map
+          map={map.assets}
+          stateStore={readable(map.get_artificial_spawn_state())}
+        />
+      </div>
+    {/await}
+  </Dialog>
 {/if}
 
 <style>
+  :global(html),
+  :global(body),
+  :global(#app) {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  :global(button:not(:disabled)) {
+    cursor: pointer;
+  }
+  .menu-wrapper {
+    padding: 1rem;
+    box-sizing: border-box;
+    height: 100%;
+    width: 100%;
+    overflow: auto;
+  }
+  p {
+    margin: 0 0 1rem 0;
+  }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -271,36 +322,33 @@
   }
   thead > tr:last-child > * {
     border-bottom: 1px solid #111;
+    font-size: 0.8rem;
   }
   td[colspan="4"] {
     text-align: center;
   }
 
-  .backdrop {
-    background-image: radial-gradient(#222a, #666a);
-    position: fixed;
-    height: 100vh;
-    width: 100vw;
-    top: 0;
-  }
-
-  .dialog {
+  form {
     display: grid;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    background-color: #fff;
-    padding: 2rem;
     grid-gap: 0.5rem;
+    grid-template-columns: auto 1fr;
+    width: min(30rem, clamp(95vw - 4rem));
   }
 
-  .map-preview {
-    width: 80vw;
-    height: 80vh;
+  form label {
+    display: contents;
+  }
+
+  form button[type="submit"] {
+    grid-column: 1/-1;
   }
 
   select {
     max-width: 50vw;
+  }
+
+  .map-preview {
+    width: calc(95vw - 4rem);
+    height: calc(95vh - 5rem);
   }
 </style>

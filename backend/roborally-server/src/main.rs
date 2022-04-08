@@ -38,23 +38,40 @@ mod game;
 mod game_connection;
 mod parser;
 
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    collections::hash_map::{Entry, HashMap},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use futures::future::join_all;
 use game::Game;
 use game_connection::PlayerConnection;
 use http::StatusCode;
-use rand::random;
+use percent_encoding::percent_decode_str;
 use roborally_structs::{game_map::GameMap, logging};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::Instant};
 use warp::{reply::with_status, Filter, Reply};
 
-async fn socket_connect_handler(game_id: u64, ws: warp::ws::Ws, games_lock: Games) -> impl Reply {
-    let game = games_lock.write().await.get_mut(&game_id).map(|entry| {
-        entry.last_nobody_connected = None;
-        Arc::clone(&entry.game)
-    });
+async fn socket_connect_handler(
+    game_name_urlencoded: String,
+    ws: warp::ws::Ws,
+    games_lock: Games,
+) -> impl Reply {
+    let game = games_lock
+        .write()
+        .await
+        .get_mut(
+            percent_decode_str(&game_name_urlencoded)
+                .decode_utf8_lossy()
+                .as_ref(),
+        )
+        .map(|entry| {
+            entry.last_nobody_connected = None;
+            Arc::clone(&entry.game)
+        });
     ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
@@ -85,31 +102,25 @@ async fn new_game_handler(
         Ok(g) => g,
         Err(e) => return with_status(e, StatusCode::BAD_REQUEST),
     };
-
-    let mut id = random();
-    {
-        let mut games = games_lock.write().await;
-        {
-            while games.contains_key(&id) {
-                id = random();
-            }
-        }
-        games.insert(
-            id,
-            GameIndexEntry {
-                name,
+    let mut games = games_lock.write().await;
+    match games.entry(name) {
+        Entry::Occupied(_) => with_status(
+            "Game with this name already exists".to_owned(),
+            StatusCode::BAD_REQUEST,
+        ),
+        Entry::Vacant(vacant) => {
+            vacant.insert(GameIndexEntry {
                 map_name,
                 last_nobody_connected: Some(Instant::now()),
                 game: Arc::new(RwLock::new(game)),
-            },
-        );
+            });
+            with_status(String::new(), StatusCode::CREATED)
+        }
     }
-    with_status(id.to_string(), StatusCode::CREATED)
 }
 
 #[derive(Serialize)]
 struct GameListItem {
-    id: String,
     seats: Vec<Option<String>>,
     map_name: String,
     name: String,
@@ -117,14 +128,14 @@ struct GameListItem {
 
 enum GameListResult {
     ListItem(GameListItem),
-    Cleanup(u64),
+    Cleanup(String),
 }
 
 async fn list_games_handler(games_lock: Games) -> impl Reply {
     let mut games = games_lock.write().await;
     let games_futures: Vec<_> = games
         .iter_mut()
-        .map(async move |(id, index_entry)| {
+        .map(async move |(game_name, index_entry)| {
             let seats: Vec<Option<String>> = index_entry
                 .game
                 .read()
@@ -140,44 +151,43 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
                 .collect();
             if seats.iter().all(Option::is_none) {
                 if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
-                    if last_nobody_connected.elapsed() > Duration::from_secs(60) {
-                        return GameListResult::Cleanup(*id);
+                    if last_nobody_connected.elapsed() > Duration::from_secs(300) {
+                        return GameListResult::Cleanup(game_name.clone());
                     }
                 } else {
                     index_entry.last_nobody_connected = Some(Instant::now());
                 }
             }
             GameListResult::ListItem(GameListItem {
-                id: id.to_string(),
                 seats,
                 map_name: index_entry.map_name.clone(),
-                name: index_entry.name.clone(),
+                name: game_name.clone(),
             })
         })
         .collect();
 
-    let games_list: Vec<_> = join_all(games_futures)
+    let mut games_list: Vec<_> = join_all(games_futures)
         .await
         .into_iter()
         .filter_map(|list_result| match list_result {
             GameListResult::ListItem(item) => Some(item),
-            GameListResult::Cleanup(id) => {
-                games.remove(&id);
+            GameListResult::Cleanup(name) => {
+                games.remove(&name);
                 None
             }
         })
         .collect();
+    games_list.sort_by(|a, b| a.name.cmp(&b.name));
     warp::reply::json(&games_list)
 }
 
 struct GameIndexEntry {
-    name: String,
     map_name: String,
     last_nobody_connected: Option<Instant>,
     game: Arc<RwLock<Game>>,
 }
 
-type Games = Arc<RwLock<HashMap<u64, GameIndexEntry>>>;
+type Games = Arc<RwLock<HashMap<String, GameIndexEntry>>>;
 type Maps = Arc<HashMap<String, GameMap>>;
 
 macro_rules! load_maps {
@@ -260,7 +270,7 @@ async fn main() {
         .and(warp::body::form::<NewGameData>())
         .then(new_game_handler);
 
-    let socket = warp::path!("websocket" / "game" / u64)
+    let socket = warp::path!("websocket" / "game" / String)
         .and(warp::ws())
         .and(create_games_state())
         .then(socket_connect_handler);

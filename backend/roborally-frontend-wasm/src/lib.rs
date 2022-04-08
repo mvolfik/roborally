@@ -23,14 +23,14 @@ use roborally_structs::{
     animations::Animation,
     card::wrapper::CardWrapper,
     game_map::GameMap,
-    game_state::PlayerGameStateView,
+    game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState},
     logging::{self, debug, error},
     position::Direction,
     transport::{ClientMessage, ServerMessage},
 };
 
 use js_sys::Function;
-use std::{convert::Into, panic};
+use std::{convert::Into, iter::repeat_with, panic};
 use wasm_bindgen::{prelude::*, JsCast};
 
 /* ##### INIT ##### */
@@ -154,8 +154,41 @@ impl MessageProcessor {
 }
 
 #[wasm_bindgen]
-pub fn parse_map(bytes: &[u8]) -> Result<AssetMap, JsValue> {
+pub fn parse_map(bytes: &[u8]) -> Result<ParsedMap, JsValue> {
     rmp_serde::from_slice::<GameMap>(bytes)
-        .map(Into::into)
+        .map(ParsedMap)
         .map_err(|e| e.to_string().into())
+}
+
+#[wasm_bindgen]
+pub struct ParsedMap(GameMap);
+
+#[wasm_bindgen]
+impl ParsedMap {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn assets(&self) -> AssetMap {
+        self.0.clone().into()
+    }
+
+    #[must_use]
+    pub fn get_artificial_spawn_state(&self) -> PlayerGameStateView {
+        PlayerGameStateView::new(
+            self.0
+                .spawn_points
+                .iter()
+                .map(|(pos, dir)| PlayerPublicState {
+                    position: *pos,
+                    direction: dir.to_continuous(),
+                    checkpoint: 0,
+                    is_rebooting: false,
+                })
+                .collect(),
+            GamePhaseView::HasWinner(0),
+            Vec::new(),
+            repeat_with(|| Some("Spawnpoint".to_owned()))
+                .take(self.0.spawn_points.len())
+                .collect(),
+        )
+    }
 }

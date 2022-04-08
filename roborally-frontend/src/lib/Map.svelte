@@ -7,17 +7,14 @@
   } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-  import { readable, Readable } from "svelte/store";
+  import type { Readable } from "svelte/store";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
   export let hovered = undefined;
   export let stateStore: Readable<
     Pick<PlayerGameStateView, "players" | "get_player">
-  > = readable({
-    players: 0,
-    get_player(): any {},
-  });
+  >;
 
   let innerDiv: HTMLDivElement;
 
@@ -113,9 +110,6 @@
                 <img style={asset.style} src={assetUri} alt="" />
               {/if}
             {/each}
-            {#if hovered && hovered.x === x && hovered.y === y}
-              <div class="hoverMarker" />
-            {/if}
           </div>
         {/each}
       {/each}
@@ -141,7 +135,7 @@
   .robot,
   .robot img {
     position: absolute;
-    transition: all 1s ease-in-out;
+    transition: all 800ms ease-in-out;
     transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
   }
   .robot > div {
@@ -149,9 +143,9 @@
     width: max-content;
     background-color: #666b;
     color: white;
-    padding: 2px 5px;
-    border-radius: 3px;
-    top: -8px;
+    padding: 0.1em 0.4em;
+    border-radius: 0.2em;
+    top: calc(var(--tile-size) * -0.15);
 
     /* centering: left moves top left corner of child relative to parent size, translate moves relative to child size */
     left: calc(var(--tile-size) / 2);
@@ -178,10 +172,13 @@
     position: absolute;
     transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
   }
-  div.hoverMarker {
+  /* div.tile:hover::after {
+    content: "";
+    display: block;
     height: 100%;
     width: 100%;
-    outline: 2px dashed red;
-    outline-offset: -2px;
-  }
+    border: 2px dashed red;
+    box-sizing: border-box;
+    position: absolute;
+  } */
 </style>

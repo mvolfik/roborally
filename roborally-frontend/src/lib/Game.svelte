@@ -13,8 +13,9 @@
   import Map from "./Map.svelte";
   import Programmer from "./Programmer.svelte";
   import { getCardAsset } from "./utils";
+  import Collapsible from "./Collapsible.svelte";
 
-  export let game_id: string;
+  export let game_name: string;
   export let name: string;
   export let seat: number;
 
@@ -46,7 +47,7 @@
     connection = new WebSocket(
       `${window.location.protocol.replace("http", "ws")}//${
         window.location.host
-      }/websocket/game/${game_id}`
+      }/websocket/game/${encodeURIComponent(game_name)}`
     );
     connection.binaryType = "arraybuffer";
     connection.onclose = () => {
@@ -86,7 +87,34 @@
     eventSource("disconnect");
     disconnect = () => {};
   };
-  $: phase = $stateStore?.phase;
+  /**
+   * Set some initial state to avoid undefined bugs.
+   * This value is later updated by the subscribe block below
+   */
+  let phase: GamePhase;
+
+  let programmerExpandedStore = writable(true);
+  let playersInfoExpandedStore = writable(false);
+  let gamePhaseExpandedStore = writable(false);
+  onMount(() => {
+    const unsub = stateStore.subscribe((newState) => {
+      if (newState === undefined) return;
+      const newPhase = newState.phase;
+      if (phase !== newPhase)
+        if (newPhase === GamePhase.Programming) {
+          programmerExpandedStore.set(true);
+        } else if (newPhase === GamePhase.Moving) {
+          gamePhaseExpandedStore.set(true);
+        } else if (newPhase === GamePhase.ProgrammingMyselfDone) {
+          playersInfoExpandedStore.set(true);
+        }
+      phase = newPhase;
+    });
+
+    return () => {
+      unsub();
+    };
+  });
 </script>
 
 <svelte:window
@@ -100,139 +128,168 @@
   style:--seat-color={`hsla(${3.979 + seat * 0.9}rad, 93%, 22%, 0.62)`}
 >
   {#if map === undefined || $stateStore === undefined}
-    <p>Loading...</p>
+    <p style:text-align="center">Connecting...</p>
   {:else}
     <div class="map">
       <Map {map} {stateStore} bind:this={mapComponent} />
     </div>
-    {#key phase === GamePhase.Moving}
-      <div class="phase-indicator" transition:fly={{ x: -200 }}>
-        {#if phase === GamePhase.HasWinner}
-          <div>Game won by {$stateStore.get_winner_name()}</div>
-        {:else if phase === GamePhase.Moving}
-          <div>
-            Executing movement register: {$stateStore.moving_phase_register_number +
-              1}
-          </div>
-          <div
-            class="register-move-phase-indicator"
-            style:--register-phase={$stateStore.moving_phase_register_phase + 1}
-          >
-            <span class="marker">&gt;</span>
-            <span>Programmed cards</span>
-            <span>Fast belts</span>
-            <span>Slow belts</span>
-            <span>Push panels</span>
-            <span>Rotations</span>
-            <span>Lasers</span>
-            <span>Checkpoints</span>
-          </div>
-        {:else}
-          <div>Program your cards for the next round!</div>
-        {/if}
-      </div>
-    {/key}
-    {#if phase === GamePhase.Programming}
-      <div class="programmer" transition:fly={{ y: 200 }}>
-        <Programmer
-          initialCards={[...Array($stateStore.hand_len)].map((_, i) =>
-            $stateStore.get_hand_card(i)
-          )}
-          on:programmingDone={handleProgrammingDone}
-        />
-      </div>
-    {:else if phase !== GamePhase.HasWinner}
-      <div class="my-registers" transition:fly={{ y: 200 }}>
-        <span>Your programmed cards</span>
-        {#each [...Array(5)].map( (_, i) => $stateStore.get_my_register_card(i) ) as card}
-          <img src={getCardAsset(card.asset_name)} alt="" />
-        {/each}
-      </div>
-    {/if}
-    {#key phase === GamePhase.Moving}
-      <div class="player-infoboxes" transition:fly={{ x: 100 }}>
-        {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player, player_i}
-          {@const name = player.name}
-          <div style:--player-i={player_i}>
-            {#if player_i === seat}
-              <div class="name self">
-                You ({name})
-              </div>
-              <button on:click={() => disconnect()}>Disconnect</button>
-            {:else if name === undefined}
-              <div class="name disconnected">
-                Seat {player_i + 1} (disconnected)
-              </div>
-            {:else}
-              <div class="name">{name}</div>
-            {/if}
-            <div class="checkpoints">
-              Checkpoints
-              {#each [...Array(map.checkpoints)].map((_, i) => player.checkpoint > i) as checkpoint_reached}
-                <div class="indicator" class:true={checkpoint_reached} />
-              {/each}
+
+    <!-- Top panel: phase indicator -->
+    <Collapsible
+      side="top"
+      label="Game phase"
+      key={phase === GamePhase.Moving}
+      expandedStore={gamePhaseExpandedStore}
+    >
+      {#if phase === GamePhase.HasWinner}
+        <p class="phase-simple-text">
+          Game won by {$stateStore.get_winner_name()}
+        </p>
+      {:else if phase === GamePhase.Moving}
+        <div>
+          Executing movement register: {$stateStore.moving_phase_register_number +
+            1}
+        </div>
+        <div
+          class="register-move-phase-indicator"
+          style:--register-phase={$stateStore.moving_phase_register_phase + 1}
+        >
+          <span class="marker">&gt;</span>
+          <span>Programmed cards</span>
+          <span>Fast belts</span>
+          <span>Slow belts</span>
+          <span>Push panels</span>
+          <span>Rotations</span>
+          <span>Lasers</span>
+          <span>Checkpoints</span>
+        </div>
+      {:else}
+        <p class="phase-simple-text">Get ready for the next round!</p>
+      {/if}
+    </Collapsible>
+
+    <!-- Right panel: player infoboxes -->
+    <Collapsible
+      side="right"
+      label="Players info"
+      noBackground
+      expandedStore={playersInfoExpandedStore}
+      key={phase === GamePhase.Moving}
+    >
+      {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player, player_i}
+        {@const name = player.name}
+        <div class="player-infobox" style:--player-i={player_i}>
+          {#if player_i === seat}
+            <div class="name self">
+              You ({name})
             </div>
-            {#if phase === GamePhase.Moving}
-              <img
-                src={getCardAsset(
-                  $stateStore.get_player_card_for_current_register(player_i)
-                    .asset_name
-                )}
-                alt="Card"
-              />
-            {:else if phase !== GamePhase.HasWinner}
-              <div>
-                Ready: <div
-                  class="indicator"
-                  class:true={$stateStore.is_ready_programming(player_i)}
-                />
-              </div>
-            {/if}
+            <button on:click={() => disconnect()}>Disconnect</button>
+          {:else if name === undefined}
+            <div class="name disconnected">
+              Seat {player_i + 1} (disconnected)
+            </div>
+          {:else}
+            <div class="name">{name}</div>
+          {/if}
+          <div class="checkpoints">
+            Checkpoints
+            {#each [...Array(map.checkpoints)].map((_, i) => player.checkpoint > i) as checkpoint_reached}
+              <div class="indicator" class:true={checkpoint_reached} />
+            {/each}
           </div>
-        {/each}
+          {#if phase === GamePhase.Moving}
+            <img
+              src={getCardAsset(
+                $stateStore.get_player_card_for_current_register(player_i)
+                  .asset_name
+              )}
+              alt="Card"
+            />
+          {:else if phase !== GamePhase.HasWinner}
+            <div>
+              Ready: <div
+                class="indicator"
+                class:true={$stateStore.is_ready_programming(player_i)}
+              />
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </Collapsible>
+
+    <!-- Bottom panel: programmer interface -->
+    {#if phase !== GamePhase.HasWinner}
+      <Collapsible
+        side="bottom"
+        label="Your cards"
+        key={phase === GamePhase.Programming}
+        expandedStore={programmerExpandedStore}
+      >
+        {#if phase === GamePhase.Programming}
+          <Programmer
+            initialCards={[...Array($stateStore.hand_len)].map((_, i) =>
+              $stateStore.get_hand_card(i)
+            )}
+            on:programmingDone={handleProgrammingDone}
+          />
+        {:else}
+          <div class="my-registers" transition:fly={{ y: 200 }}>
+            <span>Your programmed cards</span>
+            {#each [...Array(5)].map( (_, i) => $stateStore.get_my_register_card(i) ) as card}
+              <img src={getCardAsset(card.asset_name)} alt="" />
+            {/each}
+          </div>
+        {/if}
+      </Collapsible>
+    {/if}
+
+    <!-- Left panel: rule hints -->
+    <Collapsible side="left" label="Rule hints">
+      <div style:max-width="min(20rem, 80vw)" style:padding="1rem">
+        <p>Oh, hi there!</p>
+        <p>
+          Hopefully, one day, in this panel you will find various hints for mvoe
+          execution order, tile effects etc
+        </p>
       </div>
-    {/key}
+    </Collapsible>
   {/if}
 </div>
 
 <style>
   .outer {
+    --card-width: 4rem;
+    --card-border-radius: 5px;
+    overflow: hidden;
     position: relative;
-    overflow: clip;
+    height: 100%;
+    width: 100%;
   }
+
   .map {
-    height: 100vh;
-  }
-  .programmer {
-    --programmer-width: 90vw;
-    left: 5vw;
-    position: absolute;
-    bottom: 0;
+    height: 100%;
+    width: 100%;
   }
 
-  .player-infoboxes {
-    color: #eee;
-    position: absolute;
-    right: 0;
-    top: 0;
+  .phase-simple-text {
+    margin: 0.7rem 1rem;
   }
 
-  .player-infoboxes > div {
-    margin-top: 40px;
+  .player-infobox {
     background-color: hsla(
       calc(3.979rad + var(--player-i) * 0.9rad),
       93%,
       22%,
       0.62
     );
-    padding: 20px;
-    border-radius: 5px 0 0 5px;
+    color: white;
+    padding: 0.7rem 1rem;
   }
 
-  .player-infoboxes img {
-    height: 80px;
-    margin-top: 6px;
-    border-radius: 4px;
+  .player-infobox img {
+    height: auto;
+    width: var(--card-width);
+    border-radius: var(--card-border-radius);
   }
 
   .name {
@@ -249,32 +306,21 @@
   }
 
   .checkpoints .indicator {
-    border: 3px solid black;
+    border: 0.2em solid black;
     box-sizing: border-box;
-    border-radius: 5px;
-    margin: 0 2px;
+    border-radius: 0.3rem;
+    margin: 0 0.2em;
   }
   .indicator {
     width: 1em;
     background-color: red;
-    display: inline flow-root;
+    display: inline-block;
     height: 1.1em;
     vertical-align: text-top;
   }
 
   .indicator.true {
     background-color: green;
-  }
-
-  .phase-indicator {
-    color: #eee;
-    position: absolute;
-    left: 40px;
-    top: 0;
-    background-color: var(--seat-color);
-    padding: 15px;
-    font-size: 0.9em;
-    border-radius: 0 0 5px 5px;
   }
 
   .register-move-phase-indicator {
@@ -288,26 +334,18 @@
   }
 
   .my-registers {
-    color: #eee;
-    position: absolute;
-    bottom: 0;
-    left: 100px;
-    background-color: var(--seat-color);
-    padding: 15px;
-    font-size: 0.9em;
-    border-radius: 5px 5px 0 0;
+    padding: 0.5rem 2rem;
     display: grid;
-    column-gap: 20px;
+    column-gap: 0.5rem;
     grid-template-columns: auto auto auto auto auto;
   }
   .my-registers span {
     grid-column: 1/-1;
+    margin-bottom: 0.3rem;
     text-align: center;
-    margin-bottom: 10px;
-    font-size: 1.3em;
   }
   .my-registers > img {
-    border-radius: 8px;
-    width: 80px;
+    border-radius: var(--card-border-radius);
+    width: var(--card-width);
   }
 </style>

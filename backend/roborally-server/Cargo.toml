@@ -7,6 +7,7 @@ version = "0.1.0"
 [dependencies]
 futures = "^0.3.21"
 http = "^0.2.6"
+percent-encoding = "^2.1.0"
 rand = "^0.8.5"
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["server"]}
