@@ -145,7 +145,10 @@
     color: white;
     padding: 0.1em 0.4em;
     border-radius: 0.2em;
-    top: calc(var(--tile-size) * -0.15);
+    top: calc(var(--tile-size) * -0.12);
+    max-width: 6rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     /* centering: left moves top left corner of child relative to parent size, translate moves relative to child size */
     left: calc(var(--tile-size) / 2);

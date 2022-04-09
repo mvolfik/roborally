@@ -157,13 +157,23 @@ impl From<GameMap> for AssetMap {
                                 },
                             }]
                         }
-                        Rotation(is_clockwise) => vec![Asset {
-                            uri: "rotate.png".to_owned(),
-                            effects: Effects {
-                                flip_x: !is_clockwise,
-                                ..Effects::default()
+                        Rotation(is_clockwise) => vec![
+                            Asset {
+                                uri: "floor.jpg".to_owned(),
+                                effects: Effects {
+                                    scale: 0.25,
+                                    ..Effects::random_rotate_flip()
+                                },
                             },
-                        }],
+                            Asset {
+                                uri: "rotate.png".to_owned(),
+                                effects: Effects {
+                                    scale: 0.25,
+                                    flip_x: !is_clockwise,
+                                    ..Effects::default()
+                                },
+                            }
+                        ],
                         PushPanel(dir, active_rounds) => {
                             let mut assets = vec![Asset {
                                 uri: "push-panel.png".to_owned(),
@@ -226,12 +236,15 @@ impl From<GameMap> for AssetMap {
                 [
                     Asset {
                         uri: "checkpoint.png".to_owned(),
-                        effects: Effects::default(),
+                        effects: Effects {
+                            scale: 0.25,
+                            ..Effects::default()
+                        },
                     },
                     Asset {
                         uri: format!("number-{}.png", i + 1),
                         effects: Effects {
-                            translate: Some((30.0, 30.0)),
+                            translate: Some((33.0, 35.0)),
                             ..Effects::default()
                         },
                     },

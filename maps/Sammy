@@ -1,0 +1,13 @@
+Size=16,12 Antenna=7,11 Reboot=7,0:d Checkpoints=7,4;2,3;13,5 Spawnpoints=0,4:r;0,3:r;15,4:l;15,3:l Lasers=
+F;F;F;F;F;F;F;F;F;F;F;F;F;F;F;F
+F;F;F;F;F;F;F:l;F;F:r;F;F;F;F;F;F;F
+F;F;F:lu;F:ur;F;F;F:l;F;F:r;F;F;F;F:ul;F:ur;F;F
+F:ul;F;F:l;F:r;F;F;F:l;F;F:r;F;F;F;F:l;F:r;F;F:ur
+F:ld;F:d;F;F;F;F;F:l;F;F:r;F;F;F;F;F;F:d;F:rd
+F;Bfd;F:ld;F:dr;F;Bfd;F:l;Bfu;F:r;F;Bfd;F;F:dl;F:dr;Bfd;F
+F;Bfd;F;V;F;Bfd;F:l;Bfu;F:r;F;Bfd;F;V;F;Bfd;F
+F;Bfd;F;V;F;Bfd;F:l;Bfu;F:r;F;Bfd;F;V;F;Bfd;F
+F;Bfr;Bfr;V;F;Bfd;F:l;Bfu;F:r;F;Bfd;F;V;F;Bfd;F
+F;F;F;V;F;Bfd;F:l;Bfu;F:r;F;Bfd;F;V;F;Bfd;F
+F;F;F;V;F;Bfr;Bfr;Bfu;Bfl;Bfl;Bfl;F;V;Bfl;Bfl;F
+V;V;V;V;V;V;V;F:udlr;V;V;V;V;V;V;V;V
