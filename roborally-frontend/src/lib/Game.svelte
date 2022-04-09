@@ -47,7 +47,7 @@
     connection = new WebSocket(
       `${window.location.protocol.replace("http", "ws")}//${
         window.location.host
-      }/websocket/game/${encodeURIComponent(game_name)}`
+      }/websocket/game/${encodeURIComponent(game_name).replaceAll(".", "%2e")}`
     );
     connection.binaryType = "arraybuffer";
     connection.onclose = () => {

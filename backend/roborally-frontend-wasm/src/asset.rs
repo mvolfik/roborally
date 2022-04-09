@@ -152,7 +152,7 @@ impl From<GameMap> for AssetMap {
                                 effects: Effects {
                                     flip_x,
                                     rotate: dir.to_continuous(),
-                                    scale: if is_fast { 1.0 } else { 0.125 },
+                                    scale: 0.125,
                                     ..Effects::default()
                                 },
                             }]
@@ -190,7 +190,7 @@ impl From<GameMap> for AssetMap {
                                         if *is_active { "active" } else { "inactive" }
                                     ),
                                     effects: Effects {
-                                        translate: Some(((2 + i * 12) as f64, 42.0)),
+                                        translate: Some(((2 + i * 12) as f64, 35.0)),
                                         rotate: dir.to_continuous(),
                                         ..Effects::default()
                                     },
@@ -206,6 +206,7 @@ impl From<GameMap> for AssetMap {
                                 uri: "wall.png".to_owned(),
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
+                                    scale: 0.25,
                                     ..Effects::default()
                                 },
                             });
@@ -220,7 +221,10 @@ impl From<GameMap> for AssetMap {
 
         assets.get_mut(m.antenna).unwrap().0.push(Asset {
             uri: "antenna.png".to_owned(),
-            effects: Effects::default(),
+            effects: Effects {
+                scale: 0.25,
+                ..Effects::default()
+            },
         });
 
         assets.get_mut(m.reboot_token.0).unwrap().0.push(Asset {
