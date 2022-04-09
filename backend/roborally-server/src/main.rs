@@ -49,29 +49,25 @@ use futures::future::join_all;
 use game::Game;
 use game_connection::PlayerConnection;
 use http::StatusCode;
-use percent_encoding::percent_decode_str;
 use roborally_structs::{game_map::GameMap, logging};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::Instant};
 use warp::{reply::with_status, Filter, Reply};
 
+#[derive(Deserialize)]
+struct ConnectQuery {
+    name: String,
+}
+
 async fn socket_connect_handler(
-    game_name_urlencoded: String,
+    query: ConnectQuery,
     ws: warp::ws::Ws,
     games_lock: Games,
 ) -> impl Reply {
-    let game = games_lock
-        .write()
-        .await
-        .get_mut(
-            percent_decode_str(&game_name_urlencoded)
-                .decode_utf8_lossy()
-                .as_ref(),
-        )
-        .map(|entry| {
-            entry.last_nobody_connected = None;
-            Arc::clone(&entry.game)
-        });
+    let game = games_lock.write().await.get_mut(&query.name).map(|entry| {
+        entry.last_nobody_connected = None;
+        Arc::clone(&entry.game)
+    });
     ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
 }
 
@@ -259,8 +255,8 @@ async fn main() {
         .map(|maps: Maps| warp::reply::json(&maps.keys().collect::<Vec<_>>()));
     let get_map = api
         .and(warp::path("map").and(warp::path::end()))
-        .and(warp::get())
         .and(warp::query::<GetMapQuery>())
+        .and(warp::get())
         .and(create_maps_state())
         .map(handle_get_map);
     let new_game = api
@@ -271,7 +267,9 @@ async fn main() {
         .and(warp::body::form::<NewGameData>())
         .then(new_game_handler);
 
-    let socket = warp::path!("websocket" / "game" / String)
+    let socket = warp::path("websocket")
+        .and(warp::path("game").and(warp::path::end()))
+        .and(warp::query::<ConnectQuery>())
         .and(warp::ws())
         .and(create_games_state())
         .then(socket_connect_handler);
