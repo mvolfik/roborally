@@ -9,7 +9,7 @@
   import { createEventDispatcher, onMount } from "svelte";
   import { fly } from "svelte/transition";
 
-  import { writable, Writable } from "svelte/store";
+  import { writable } from "svelte/store";
   import Map from "./Map.svelte";
   import Programmer from "./Programmer.svelte";
   import { getCardAsset } from "./utils";
@@ -20,9 +20,11 @@
   export let seat: number;
 
   let connection: WebSocket;
-  let stateStore: Writable<PlayerGameStateView> = writable(undefined);
   let map: AssetMap;
   let mapComponent: Map;
+
+  let stateQueue = [];
+  let state: PlayerGameStateView;
 
   function handleProgrammingDone(
     e: CustomEvent<
@@ -37,7 +39,7 @@
   function mainHandler(e: MessageEvent) {
     MessageProcessor.handle_message(
       new Uint8Array(e.data),
-      stateStore.set,
+      (nextState) => (stateQueue = [...stateQueue, nextState]),
       alert,
       mapComponent?.handleBullet ?? (() => {})
     );
@@ -88,33 +90,27 @@
     disconnect = () => {};
   };
   /**
-   * Set some initial state to avoid undefined bugs.
-   * This value is later updated by the subscribe block below
+   * This value is later updated by the reactive block below
    */
   let phase: GamePhase;
 
   let programmerExpandedStore = writable(true);
   let playersInfoExpandedStore = writable(false);
   let gamePhaseExpandedStore = writable(false);
-  onMount(() => {
-    const unsub = stateStore.subscribe((newState) => {
-      if (newState === undefined) return;
-      const newPhase = newState.phase;
-      if (phase !== newPhase)
-        if (newPhase === GamePhase.Programming) {
-          programmerExpandedStore.set(true);
-        } else if (newPhase === GamePhase.Moving) {
-          gamePhaseExpandedStore.set(true);
-        } else if (newPhase === GamePhase.ProgrammingMyselfDone) {
-          playersInfoExpandedStore.set(true);
-        }
-      phase = newPhase;
-    });
 
-    return () => {
-      unsub();
-    };
-  });
+  $: {
+    if (state === undefined) break $;
+    const newPhase = state.phase;
+    if (newPhase !== phase)
+      if (newPhase === GamePhase.Programming) {
+        programmerExpandedStore.set(true);
+      } else if (newPhase === GamePhase.Moving) {
+        gamePhaseExpandedStore.set(true);
+      } else if (newPhase === GamePhase.ProgrammingMyselfDone) {
+        playersInfoExpandedStore.set(true);
+      }
+    phase = newPhase;
+  }
 </script>
 
 <svelte:window
@@ -127,11 +123,11 @@
   class="outer"
   style:--seat-color={`hsla(${3.979 + seat * 0.9}rad, 93%, 22%, 0.62)`}
 >
-  {#if map === undefined || $stateStore === undefined}
+  {#if map === undefined || state === undefined}
     <p style:text-align="center">Connecting...</p>
   {:else}
     <div class="map">
-      <Map {map} {stateStore} bind:this={mapComponent} />
+      <Map {map} {state} bind:this={mapComponent} />
     </div>
 
     <!-- Top panel: phase indicator -->
@@ -143,16 +139,15 @@
     >
       {#if phase === GamePhase.HasWinner}
         <p class="phase-simple-text">
-          Game won by {$stateStore.get_winner_name()}
+          Game won by {state.get_winner_name()}
         </p>
       {:else if phase === GamePhase.Moving}
         <div>
-          Executing movement register: {$stateStore.moving_phase_register_number +
-            1}
+          Executing movement register: {state.moving_phase_register_number + 1}
         </div>
         <div
           class="register-move-phase-indicator"
-          style:--register-phase={$stateStore.moving_phase_register_phase + 1}
+          style:--register-phase={state.moving_phase_register_phase + 1}
         >
           <span class="marker">&gt;</span>
           <span>Programmed cards</span>
@@ -176,7 +171,7 @@
       expandedStore={playersInfoExpandedStore}
       key={phase === GamePhase.Moving}
     >
-      {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player, player_i}
+      {#each [...Array(state.players)].map( (_, i) => state.get_player(i) ) as player, player_i}
         {@const name = player.name}
         <div class="player-infobox" style:--player-i={player_i}>
           {#if player_i === seat}
@@ -202,8 +197,7 @@
           {#if phase === GamePhase.Moving}
             <img
               src={getCardAsset(
-                $stateStore.get_player_card_for_current_register(player_i)
-                  .asset_name
+                state.get_player_card_for_current_register(player_i).asset_name
               )}
               alt="Card"
             />
@@ -211,7 +205,7 @@
             <div>
               Ready: <div
                 class="indicator"
-                class:true={$stateStore.is_ready_programming(player_i)}
+                class:true={state.is_ready_programming(player_i)}
               />
             </div>
           {/if}
@@ -229,15 +223,15 @@
       >
         {#if phase === GamePhase.Programming}
           <Programmer
-            initialCards={[...Array($stateStore.hand_len)].map((_, i) =>
-              $stateStore.get_hand_card(i)
+            initialCards={[...Array(state.hand_len)].map((_, i) =>
+              state.get_hand_card(i)
             )}
             on:programmingDone={handleProgrammingDone}
           />
         {:else}
           <div class="my-registers" transition:fly={{ y: 200 }}>
             <span>Your programmed cards</span>
-            {#each [...Array(5)].map( (_, i) => $stateStore.get_my_register_card(i) ) as card}
+            {#each [...Array(5)].map( (_, i) => state.get_my_register_card(i) ) as card}
               <img src={getCardAsset(card.asset_name)} alt="" />
             {/each}
           </div>

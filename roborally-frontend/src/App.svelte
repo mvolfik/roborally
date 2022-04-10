@@ -280,10 +280,7 @@
       <span>Please wait, loading map preview</span>
     {:then map}
       <div class="map-preview">
-        <Map
-          map={map.assets}
-          stateStore={readable(map.get_artificial_spawn_state())}
-        />
+        <Map map={map.assets} state={map.get_artificial_spawn_state()} />
       </div>
     {/await}
   </Dialog>

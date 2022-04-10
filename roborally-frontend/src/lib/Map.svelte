@@ -7,14 +7,11 @@
   } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
-  import type { Readable } from "svelte/store";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
   export let hovered = undefined;
-  export let stateStore: Readable<
-    Pick<PlayerGameStateView, "players" | "get_player">
-  >;
+  export let state: Pick<PlayerGameStateView, "players" | "get_player">;
 
   let innerDiv: HTMLDivElement;
 
@@ -71,9 +68,9 @@
   let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
   $: {
     players = new Map();
-    const playersN = $stateStore.players;
+    const playersN = state.players;
     for (let i = 0; i < playersN; i++) {
-      const player = $stateStore.get_player(i);
+      const player = state.get_player(i);
       const pos = player.position;
       const key = `${pos.x},${pos.y}`;
       if (!players.has(key)) {
@@ -113,7 +110,7 @@
           </div>
         {/each}
       {/each}
-      {#each [...Array($stateStore.players)].map( (_, i) => $stateStore.get_player(i) ) as player}
+      {#each [...Array(state.players)].map( (_, i) => state.get_player(i) ) as player}
         {@const pos = player.position}
         <div class="robot" style:--x={pos.x} style:--y={pos.y}>
           <img src={robot} alt="Robot" style={player.style} />
