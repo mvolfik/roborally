@@ -46,7 +46,7 @@ use std::{
 };
 
 use futures::future::join_all;
-use game::Game;
+use game::{Game, GamePhase};
 use game_connection::PlayerConnection;
 use http::StatusCode;
 use roborally_structs::{game_map::GameMap, logging};
@@ -132,10 +132,14 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     let games_futures: Vec<_> = games
         .iter_mut()
         .map(async move |(game_name, index_entry)| {
-            let seats: Vec<Option<String>> = index_entry
-                .game
-                .read()
-                .await
+            let game = index_entry.game.read().await;
+            // while this cleans the game up from the list before all players leave,
+            // that is not an issue - other players keep the game_arc reference as long
+            // as they are connected, and no new connections are allowed anyways
+            if let GamePhase::HasWinner(_) = game.phase {
+                return GameListResult::Cleanup(game_name.clone());
+            }
+            let seats: Vec<Option<String>> = game
                 .players
                 .iter()
                 .map(|player| {
