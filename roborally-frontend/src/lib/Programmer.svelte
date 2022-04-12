@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CardWrapper } from "frontend-wasm";
-  import { dndzone } from "svelte-dnd-action";
+  import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME } from "svelte-dnd-action";
   import { createEventDispatcher, onMount } from "svelte";
   import { getCardAsset } from "./utils";
   import { flip } from "svelte/animate";
@@ -24,7 +24,6 @@
   let flipDurationMs = 200;
 
   function handleDnd(e: CustomEvent, register_i?: number) {
-    console.log(e.detail.items, e.detail.info);
     if (register_i === undefined) {
       cardsInHand = e.detail.items;
     } else {
@@ -81,7 +80,9 @@
             flipDurationMs,
             type: zoneId,
             // there is some non-shadow card ([<empty>].some() returns false)
-            dropFromOthersDisabled: maybeCard.some((x) => !x.isDndShadowItem),
+            dropFromOthersDisabled: maybeCard.some(
+              (x) => !x[SHADOW_ITEM_MARKER_PROPERTY_NAME]
+            ),
           }}
           on:consider={(e) => handleDnd(e, i)}
           on:finalize={(e) => handleDnd(e, i)}

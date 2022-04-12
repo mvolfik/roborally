@@ -19,6 +19,10 @@ pub struct GameMap {
 
 impl std::fmt::Debug for GameMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GameMap").finish_non_exhaustive()
+        let size = self.tiles.size();
+        f.debug_struct("GameMap")
+            .field("width", &size.x)
+            .field("height", &size.y)
+            .finish_non_exhaustive()
     }
 }

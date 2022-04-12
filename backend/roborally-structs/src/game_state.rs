@@ -145,7 +145,7 @@ impl PlayerGameStateView {
         if let (Some(name), Some(player)) = (self.player_names.get(i), self.player_states.get(i)) {
             Some(wrapper::PlayerPublicStateWrapper {
                 state: *player,
-                name: name.as_ref().map(|x| x.clone()),
+                name: name.clone(),
                 seat: i,
             })
         } else {
@@ -217,7 +217,7 @@ mod wrapper {
 
         #[wasm_bindgen(getter)]
         pub fn name(&self) -> Option<String> {
-            self.name.as_ref().map(|x| x.clone())
+            self.name.clone()
         }
 
         #[wasm_bindgen(getter)]

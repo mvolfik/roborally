@@ -13,11 +13,11 @@ pub enum Card {
     Again,
 }
 
+/// wasm_bindgen doesn't support methods on enum, so it needs to be wrapped
 #[cfg(feature = "client")]
 pub mod wrapper {
-    use std::ops::Deref;
-
     use super::Card;
+    use std::ops::Deref;
     use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
     #[wasm_bindgen]

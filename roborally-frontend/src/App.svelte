@@ -18,11 +18,18 @@
     | {
         state: "choosingSeat";
         game_name: string;
+        map_name: string;
         seats: Array<string | null>;
         chosenSeat: number | undefined;
         name: string;
       }
-    | { state: "inGame"; game_name: string; seat: number; name: string } = {
+    | {
+        state: "inGame";
+        game_name: string;
+        map_name: string;
+        seat: number;
+        name: string;
+      } = {
     state: "disconnected",
   };
   let games_promise = refresh_game_list();
@@ -98,6 +105,7 @@
     game_name={state.game_name}
     name={state.name}
     seat={state.seat}
+    map_name={state.map_name}
     on:disconnect={() => {
       state = { state: "disconnected" };
       games_promise = refresh_game_list();
@@ -159,6 +167,7 @@
                       state = {
                         state: "choosingSeat",
                         game_name: game.name,
+                        map_name: game.map_name,
                         seats: game.seats,
                         chosenSeat: undefined,
                         name: "",
@@ -194,6 +203,7 @@
           name: state.name,
           game_name: state.game_name,
           seat: state.chosenSeat,
+          map_name: state.map_name,
         };
       }}
     >

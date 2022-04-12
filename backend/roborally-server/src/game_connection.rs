@@ -8,7 +8,7 @@ use roborally_structs::{
 use tokio::{sync::RwLock, time::timeout};
 use warp::ws::{Message, WebSocket};
 
-use crate::game::{run_moving_phase, Game, GamePhase};
+use crate::game::{Game, GamePhase};
 
 #[derive(Debug)]
 pub struct SocketWriter(SplitSink<WebSocket, Message>);
@@ -102,7 +102,6 @@ impl PlayerConnection {
         };
         let self_arc = {
             let mut game = game_lock.write().await;
-            let map = game.map.clone();
             if let GamePhase::HasWinner(..) = game.phase {
                 writer
                     .close_with_notice("This game has already finished".to_owned())
@@ -123,7 +122,6 @@ impl PlayerConnection {
                     .await;
                 return;
             }
-            writer.send_message(ServerMessage::InitInfo(map)).await;
 
             let conn = Arc::new(Self {
                 player_name,
@@ -132,7 +130,7 @@ impl PlayerConnection {
                 socket: RwLock::new(writer),
             });
             player.connected = Arc::downgrade(&conn);
-            game.notify_update().await;
+            game.send_single_update().await;
             conn
         };
         let self_weak = Arc::downgrade(&self_arc);
@@ -185,12 +183,6 @@ impl PlayerConnection {
                                 .send_message(ServerMessage::Notice(e))
                                 .await;
                         }
-                        let mut game = self_arc.game.write().await;
-                        game.notify_update().await;
-                        if let GamePhase::Programming(vec) = &game.phase && vec.iter().all(Option::is_some) {
-                                drop(game);
-                                tokio::spawn(run_moving_phase(Arc::clone(&game_lock)));
-                        };
                     }
                     _other => {
                         self_arc
@@ -208,7 +200,7 @@ impl PlayerConnection {
             info!("Ending receive loop for player {}", self_arc.player_name);
             let game = Arc::clone(&self_arc.game);
             drop(self_arc);
-            game.write().await.notify_update().await;
+            game.write().await.send_single_update().await;
         });
     }
 }

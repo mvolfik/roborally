@@ -7,5 +7,10 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum Animation {
     /// from, to, flight direction, is_from_tank
-    BulletFlight(Position, Position, Direction, bool),
+    BulletFlight {
+        from: Position,
+        to: Position,
+        direction: Direction,
+        is_from_tank: bool,
+    },
 }

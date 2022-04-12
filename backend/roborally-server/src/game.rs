@@ -1,15 +1,11 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     iter::repeat,
     mem,
-    sync::{Arc, Weak},
-    time::Duration,
+    sync::Weak,
 };
 
-use futures::{
-    future::{join_all, BoxFuture},
-    FutureExt,
-};
+use futures::future::join_all;
 use rand::{prelude::SliceRandom, thread_rng};
 use roborally_structs::{
     animations::Animation,
@@ -20,19 +16,10 @@ use roborally_structs::{
     position::{Direction, Position},
     tile::Tile,
     tile_type::TileType,
-    transport::ServerMessage,
+    transport::{ServerMessage, StateArrayItem},
 };
-use tokio::{sync::RwLock, time::sleep};
 
 use crate::game_connection::PlayerConnection;
-
-#[derive(Clone, Copy, Debug)]
-pub struct DamagePiles {
-    pub spam: u8,
-    pub worm: u8,
-    pub virus: u8,
-    pub trojan: u8,
-}
 
 #[derive(Debug)]
 pub struct Player {
@@ -110,14 +97,7 @@ pub enum GamePhase {
     HasWinner(usize),
 }
 
-#[derive(PartialEq, Eq)]
-enum MoveResult {
-    DidntMove,
-    Moved { rebooted: bool },
-}
-
 #[derive(Debug)]
-#[non_exhaustive]
 pub struct Game {
     pub map: GameMap,
     pub players: Vec<Player>,
@@ -172,7 +152,7 @@ impl Game {
         })
     }
 
-    pub async fn notify_update(&mut self) {
+    pub async fn send_single_update(&mut self) {
         // we need a separate map and collect to satisfy `self` borrow rules
         #[allow(clippy::needless_collect)]
         let connections: Vec<_> = self
@@ -189,7 +169,7 @@ impl Game {
                 conn.socket
                     .write()
                     .await
-                    .send_message(ServerMessage::SetState(msg))
+                    .send_message(ServerMessage::State(msg))
                     .await;
             });
         join_all(futures).await;
@@ -197,16 +177,13 @@ impl Game {
 
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
-        let GamePhase::Programming(vec) = &mut self.phase
-        else {
-            return Err("Programming phase isn't active right now".to_owned());
+        let my_programmed_ref = match &mut self.phase {
+            GamePhase::Programming(vec) => &mut vec[seat],
+            _ => return Err("Programming phase isn't active right now".to_owned()),
         };
-        let my_programmed_ref = match vec.get_mut(seat).unwrap() {
-            Some(_) => {
-                return Err("You have already programmed your cards for this round".to_owned());
-            }
-            x @ None => x,
-        };
+        if my_programmed_ref.is_some() {
+            return Err("You have already programmed your cards for this round".to_owned());
+        }
         let mut used_hand_indexes = HashSet::new();
         'outer: for picked_card in cards {
             for (i, hand_card) in player.hand.iter().enumerate() {
@@ -229,11 +206,89 @@ impl Game {
             i += 1;
             res
         });
+        self.send_single_update().await;
+
+        if let GamePhase::Programming(vec) = &self.phase {
+            if vec.iter().all(std::option::Option::is_some) {
+                self.phase = GamePhase::Moving {
+                    cards: vec.iter().map(|c| c.unwrap()).collect(),
+                    register: 0,
+                    register_phase: RegisterMovePhase::PlayerCards,
+                };
+                self.run_moving_phase().await;
+            }
+        }
+
         Ok(())
     }
 
+    async fn run_moving_phase(&mut self) {
+        let states = (0..self.players.len()).map(|_| Vec::new()).collect();
+        let mut manager = MovingPhaseManager {
+            game: self,
+            states,
+            reboot_queue: Vec::new(),
+        };
+        manager.run();
+        let futures = manager.states.into_iter().zip(self.players.iter()).map(
+            async move |(state_array, player)| {
+                if let Some(conn) = player.connected.upgrade() {
+                    conn.socket
+                        .write()
+                        .await
+                        .send_message(ServerMessage::AnimatedStates(state_array))
+                        .await;
+                }
+            },
+        );
+        join_all(futures).await;
+    }
+}
+
+enum QueueUpdateType {
+    StateOnly,
+    AnimationsOnly(Vec<Animation>),
+    StateWithAnimations(Vec<Animation>),
+}
+
+struct MovingPhaseManager<'a> {
+    game: &'a mut Game,
+    states: Vec<Vec<StateArrayItem>>,
+    reboot_queue: Vec<usize>,
+}
+
+impl<'a> MovingPhaseManager<'a> {
+    fn queue_update(&mut self, update_type: &QueueUpdateType) {
+        for (player_i, player_state_array) in self.states.iter_mut().enumerate() {
+            player_state_array.push(match update_type {
+                QueueUpdateType::StateOnly => {
+                    StateArrayItem::new(Some(self.game.get_state_for_player(player_i)), Vec::new())
+                }
+                QueueUpdateType::AnimationsOnly(animations) => {
+                    StateArrayItem::new(None, animations.clone())
+                }
+                QueueUpdateType::StateWithAnimations(animations) => StateArrayItem::new(
+                    Some(self.game.get_state_for_player(player_i)),
+                    animations.clone(),
+                ),
+            });
+        }
+    }
+
+    /// Moves player to given position. If needed, all players will be forcibly pushed away in the given direction.
+    ///
+    /// Forcibly pushing players away means that any walls in the way will be ignored.
+    ///
+    /// This method is used during rebooting - players already on the reboot token are pushed away. Original game maps
+    /// are designed in such a way that pushing through a wall should never happen, but we need to take care of that
+    /// edge-case.
+    ///
+    /// It is also possible that the "pushing train" of robots becomes so long, that the first one of them would fall
+    /// into a void again. In that case, this method panics, poisoning the whole game.
+    /// (TODO: find out what happens after that)
     fn force_move_to(&mut self, player_i: usize, pos: Position, pushing_direction: Direction) {
         if !self
+            .game
             .map
             .tiles
             .get(pos)
@@ -242,6 +297,7 @@ impl Game {
             panic!("Infinite reboot cycle entered");
         }
         let need_move: Vec<_> = self
+            .game
             .players
             .iter()
             .enumerate()
@@ -255,110 +311,495 @@ impl Game {
                 pushing_direction,
             );
         }
-        self.players
+        self.game
+            .players
             .get_mut(player_i)
             .unwrap()
             .public_state
             .position = pos;
     }
 
-    fn reboot(&mut self, player_i: usize) {
-        let reboot_token = self.map.reboot_token;
-        let player = self.players.get_mut(player_i).unwrap();
-        player.draw_spam();
-        player.draw_spam();
-        player.public_state.direction = reboot_token.1.to_continuous();
-        player.public_state.is_rebooting = true;
+    /// return value: if succeeded to free the tile
+    fn mov(&mut self, player_i: usize, direction: Direction) -> bool {
+        let player = self.game.players.get_mut(player_i).unwrap();
+        let origin_pos = player.public_state.position;
 
-        // temporarily move them away, to prevent collisions with players pushed during reboot
-        player.public_state.position.x = usize::MAX;
-        self.force_move_to(player_i, reboot_token.0, reboot_token.1);
+        let Some(origin_tile) = self.game.map.tiles.get(origin_pos)
+        else {
+            // can't fail to free out-of-map (void) tile
+            return true;
+        };
+        if origin_tile.typ == TileType::Void {
+            // can't fail to free void tile, but don't move
+            return true;
+        }
+        if origin_tile.walls.get(&direction) {
+            // todo: failed move animation
+            return false;
+        }
+        let target_pos = direction.apply_to(&origin_pos);
+        let Some(target_tile) = self.game.map.tiles.get(target_pos)
+        else {
+            player.public_state.position = target_pos;
+            self.reboot_queue.push(player_i);
+            return true;
+        };
+        if target_tile.walls.get(&direction.rotated().rotated()) {
+            // todo: failed move animation
+            return false;
+        }
+        if target_tile.typ == TileType::Void {
+            player.public_state.position = target_pos;
+            self.reboot_queue.push(player_i);
+            return true;
+        }
+        // this separate extraction into a Vec is necessary to satisfy borrow rules
+        let players_in_way: Vec<_> = self
+            .game
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(i, player2)| *i != player_i && player2.public_state.position == target_pos)
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            players_in_way.len() <= 1,
+            "Unexpected: more than 1 player on tile"
+        );
+        if let Some(player2_i) = players_in_way.first() {
+            if !self.mov(*player2_i, direction) {
+                // todo: failed move animation
+                return false;
+            }
+        }
+        self.game.players[player_i].public_state.position = target_pos;
+        true
     }
 
-    /// returns value:
-    /// None => failed to move
-    /// Some(vec) => moved, vec contains `player_i` of each player that was moved (in case of pushing train)
-    fn mov(&mut self, player_i: usize, push: bool, dir_opt: Option<Direction>) -> MoveResult {
-        debug!("Attempting to move player {}", player_i);
-        let player = self.players.get(player_i).unwrap();
-        let origin_pos = player.public_state.position;
-        let target_pos;
-        // fall through or break 'checks => can move
-        let should_reboot = 'checks: {
-            let Some(origin_tile) = self.map.tiles.get(origin_pos)
-            else {
-                return MoveResult::DidntMove;
-            };
-            let direction = dir_opt.unwrap_or_else(|| player.public_state.direction.to_basic());
-            if origin_tile.walls.get(&direction) {
-                debug!("There's a wall on source tile");
-                return MoveResult::DidntMove;
-            }
-            target_pos = direction.apply_to(&origin_pos);
-            let Some(target_tile) = self.map.tiles.get(target_pos)
-            else {
-                debug!("Falling out from map");
-                // falling into void
-                break 'checks true;
-            };
-            if target_tile.walls.get(&direction.rotated().rotated()) {
-                debug!("There's a wall on target tile");
-                return MoveResult::DidntMove;
-            }
-            if target_tile.typ == TileType::Void {
-                debug!("Falling into a void");
-                break 'checks true;
-            }
-            // this separate extraction into a Vec is necessary to satisfy borrow rules
-            let players_in_way: Vec<_> = self
-                .players
-                .iter()
-                .enumerate()
-                .filter(|(i, player2)| {
-                    *i != player_i && player2.public_state.position == target_pos
-                })
-                .map(|(i, _)| i)
-                .collect();
-            assert!(
-                players_in_way.len() <= 1,
-                "Unexpected: more than 1 player on tile"
-            );
-            if let Some(player2_i) = players_in_way.first() {
-                debug!("There's a player in the way");
-                if !push {
-                    debug!("Can't push, aborting");
-                    return MoveResult::DidntMove;
-                }
-                match self.mov(*player2_i, true, Some(direction)) {
-                    MoveResult::DidntMove => return MoveResult::DidntMove,
-                    MoveResult::Moved { rebooted: _ } => {}
-                }
-            }
-            false
-        };
-        debug!("Moving");
-        if should_reboot {
-            self.reboot(player_i);
-        } else {
-            self.players
-                .get_mut(player_i)
-                .unwrap()
-                .public_state
-                .position = target_pos;
+    fn process_reboots_queue(&mut self) {
+        let reboot_token = self.game.map.reboot_token;
+        for player_i in mem::take(&mut self.reboot_queue) {
+            // todo animation
+            let player = self.game.players.get_mut(player_i).unwrap();
+            player.draw_spam();
+            player.draw_spam();
+            player.public_state.direction = reboot_token.1.to_continuous();
+            player.public_state.is_rebooting = true;
+
+            // Temporarily move player away, to prevent collisions with players pushed during reboot.
+            // This isn't necessary as of now - if the robot is rebooting, it is in a hole, and if a
+            // robot pushed away by a reboot ends up in a hole, we're entering a panic anyways.
+            // However, this would become needed if the Worm damage card (or other means of reboot)
+            // are later introduced
+            player.public_state.position.x = usize::MAX / 2;
+            self.force_move_to(player_i, reboot_token.0, reboot_token.1);
+            self.queue_update(&QueueUpdateType::StateOnly);
         }
-        MoveResult::Moved {
-            rebooted: should_reboot,
+    }
+
+    fn execute_card(&mut self, player_i: usize, register_i: usize) {
+        use Card::*;
+
+        let GamePhase::Moving { cards, .. } = &mut self.game.phase
+        else {
+            unreachable!();
+        };
+
+        let card = &mut cards[player_i][register_i];
+        let player = &mut self.game.players[player_i];
+        debug!("Executing {:?} for {}", &card, player_i);
+
+        match card {
+            SPAM => {
+                *card = player.draw_one();
+                // to show the replaced card
+                self.queue_update(&QueueUpdateType::StateOnly);
+                self.execute_card(player_i, register_i);
+            }
+            mov @ (Move1 | Move2 | Move3 | Reverse1) => {
+                let mut dir = player.public_state.direction.to_basic();
+                if *mov == Reverse1 {
+                    dir = dir.rotated().rotated();
+                }
+                let n = match mov {
+                    Move1 | Reverse1 => 1,
+                    Move2 => 2,
+                    Move3 => 3,
+                    _ => unreachable!(),
+                };
+                for _ in 0..n {
+                    self.mov(player_i, dir);
+                    self.process_reboots_queue();
+                    if self.game.players[player_i].public_state.is_rebooting {
+                        break;
+                    }
+                }
+            }
+            TurnRight => {
+                player.public_state.direction = player.public_state.direction.rotated();
+                self.queue_update(&QueueUpdateType::StateOnly);
+            }
+            TurnLeft => {
+                player.public_state.direction = player.public_state.direction.rotated_ccw();
+                self.queue_update(&QueueUpdateType::StateOnly);
+            }
+            UTurn => {
+                player.public_state.direction = player.public_state.direction.rotated().rotated();
+                self.queue_update(&QueueUpdateType::StateOnly);
+            }
+            Again => {
+                if register_i == 0 {
+                    let replacement_card = player.draw_one();
+                    player
+                        .discard_pile
+                        .push(mem::replace(card, replacement_card));
+                    // show the replaced card
+                    self.queue_update(&QueueUpdateType::StateOnly);
+                    self.execute_card(player_i, register_i);
+                } else {
+                    self.execute_card(player_i, register_i - 1);
+                }
+            }
+        }
+    }
+
+    /// Simulates the whole moving phase, populating `self.states` in the process
+    ///
+    /// This function must be called when `game.phase` is still [`GameState::Programming`]
+    /// Panics if programming phase isn't active or some player doesn't have all cards programmed
+    ///
+    /// After this method returns, `game.phase` is set back to Programming (or eventualy `HasWinner`)
+    fn run(&mut self) {
+        use RegisterMovePhase::*;
+
+        if let GamePhase::Programming(cards) = &self.game.phase {
+            self.game.phase = GamePhase::Moving {
+                cards: cards.iter().map(|c| c.unwrap()).collect(),
+                register: 0,
+                register_phase: RegisterMovePhase::PlayerCards,
+            };
+        } else {
+            panic!("Attempted to start moving phase when programming phase wasn't active");
+        }
+
+        loop {
+            let GamePhase::Moving {register, register_phase, ..} = self.game.phase else {
+                unreachable!();
+            };
+            let player_indexes_by_priority = {
+                let mut indexes: Vec<usize> = (0..self.game.players.len()).collect();
+                indexes.sort_by_key(|i| Priority {
+                    me: self.game.players[*i].public_state.position,
+                    antenna: self.game.map.antenna,
+                });
+                indexes
+            };
+            let next_register_phase = match register_phase {
+                PlayerCards => {
+                    for player_i in player_indexes_by_priority {
+                        if !self
+                            .game
+                            .players
+                            .get(player_i)
+                            .unwrap()
+                            .public_state
+                            .is_rebooting
+                        {
+                            self.execute_card(player_i, register);
+                        }
+                    }
+                    FastBelts
+                }
+                belts @ (FastBelts | SlowBelts) => {
+                    let (n, next_phase) = match belts {
+                        FastBelts => (2, SlowBelts),
+                        SlowBelts => (1, PushPanels),
+                        _ => unreachable!(),
+                    };
+                    for _ in 0..n {
+                        // Mapping Position -> Indexes of all players on that tile (can't store players directly due to borrow rules)
+                        let mut moved_positions: HashMap<Position, Vec<usize>> = HashMap::new();
+                        for (player_i, player) in self.game.players.iter_mut().enumerate() {
+                            let player_pos = player.public_state.position;
+                            let position = if let Some(Tile {
+                                typ: TileType::Belt(true, dir),
+                                ..
+                            }) = self.game.map.tiles.get(player_pos)
+                            {
+                                dir.apply_to(&player_pos)
+                            } else {
+                                player_pos
+                            };
+                            moved_positions.entry(position).or_default().push(player_i);
+                        }
+                        loop {
+                            let mut made_changes = false;
+                            for (position, players) in mem::take(&mut moved_positions) {
+                                if players.len() > 1
+                                    // conflicts out of bounds or on void tiles don't matter
+                                    && self
+                                        .game
+                                        .map
+                                        .tiles
+                                        .get(position)
+                                        .is_some_and(|t| t.typ != TileType::Void)
+                                {
+                                    made_changes = true;
+                                    for player_i in players {
+                                        // move all players on the conflicted tile to the original position
+                                        // -> those that were attempted to be moved by a belt are reset, the rest stay
+                                        moved_positions
+                                            .entry(
+                                                self.game.players[player_i].public_state.position,
+                                            )
+                                            .or_default()
+                                            .push(player_i);
+                                    }
+                                } else {
+                                    // no conflict -> simply copy back
+                                    moved_positions.entry(position).or_default().extend(players);
+                                }
+                            }
+                            if !made_changes {
+                                break;
+                            }
+                        }
+                        let mut to_reboot = Vec::new();
+                        for (position, players) in moved_positions {
+                            for player_i in &players {
+                                self.game.players[*player_i].public_state.position = position;
+                            }
+                            if !self
+                                .game
+                                .map
+                                .tiles
+                                .get(position)
+                                .is_some_and(|t| t.typ != TileType::Void)
+                            {
+                                to_reboot.extend(players);
+                            }
+                        }
+                        to_reboot.sort_by_key(|i| Priority {
+                            me: self.game.players[*i].public_state.position,
+                            antenna: self.game.map.antenna,
+                        });
+                        self.reboot_queue.extend(to_reboot);
+                    }
+                    next_phase
+                }
+                PushPanels => {
+                    for player_i in player_indexes_by_priority {
+                        let pos = self
+                            .game
+                            .players
+                            .get(player_i)
+                            .unwrap()
+                            .public_state
+                            .position;
+                        if let TileType::PushPanel(dir, active) =
+                            self.game.map.tiles.get(pos).unwrap().typ
+                        {
+                            if *active.get(register).unwrap() {
+                                debug!("Moving player {} from a push panel", player_i);
+                                self.mov(player_i, dir);
+                                self.queue_update(&QueueUpdateType::StateOnly);
+                            }
+                        }
+                    }
+                    Rotations
+                }
+                Rotations => {
+                    let mut any_rotated = false;
+                    for player_i in player_indexes_by_priority {
+                        let player_state =
+                            &mut self.game.players.get_mut(player_i).unwrap().public_state;
+                        if let TileType::Rotation(is_cw) =
+                            self.game.map.tiles.get(player_state.position).unwrap().typ
+                        {
+                            let dir = &mut player_state.direction;
+                            *dir = if is_cw {
+                                dir.rotated()
+                            } else {
+                                dir.rotated_ccw()
+                            };
+                            any_rotated = true;
+                        }
+                    }
+                    if any_rotated {
+                        self.queue_update(&QueueUpdateType::StateOnly);
+                    }
+                    Lasers
+                }
+                // the code for lasers and robot lasers is mostly the same, but with one difference:
+                // - for robot lasers, we can't hit the tile we're starting on (you can't shoot yourself),
+                //   so we start the loop with "incrementing" bullet position (incl. wall checks)
+                // - for map lasers, the position increment is moved to the end of the loop, as we might
+                //   already hit a robot on the tile we're shooting from
+                Lasers => {
+                    let mut animations = Vec::new();
+                    for (start_pos, bullet_dir) in &self.game.map.lasers {
+                        let mut bullet_pos = *start_pos;
+                        let mut tile = *self.game.map.tiles.get(bullet_pos).unwrap();
+                        'map_bullet_flight: loop {
+                            for player2 in &mut self.game.players {
+                                if player2.public_state.position == bullet_pos {
+                                    debug!(
+                                        "Laser shot player {:?}",
+                                        player2.connected.upgrade().map(|c| c.player_name.clone())
+                                    );
+                                    player2.draw_spam();
+                                    animations.push(Animation::BulletFlight {
+                                        from: *start_pos,
+                                        to: bullet_pos,
+                                        direction: *bullet_dir,
+                                        is_from_tank: false,
+                                    });
+                                    break 'map_bullet_flight;
+                                }
+                            }
+                            // wall on the tile we're leaving?
+                            if tile.walls.get(bullet_dir) {
+                                break;
+                            }
+                            bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                            tile = match self.game.map.tiles.get(bullet_pos) {
+                                // out of map
+                                None => break,
+                                Some(t) => *t,
+                            };
+                            // wall on the tile we're entering?
+                            if tile.walls.get(&bullet_dir.rotated().rotated()) {
+                                break;
+                            }
+                        }
+                    }
+                    for player_i in 0..self.game.players.len() {
+                        let player_state = self.game.players.get(player_i).unwrap().public_state;
+                        if player_state.is_rebooting {
+                            // rebooting players don't shoot
+                            continue;
+                        }
+                        let bullet_dir = player_state.direction.to_basic();
+                        let start_pos = player_state.position;
+                        let mut bullet_pos = start_pos;
+                        let mut tile = *self.game.map.tiles.get(bullet_pos).unwrap();
+                        'robot_bullet_flight: loop {
+                            // wall on the tile we're leaving?
+                            if tile.walls.get(&bullet_dir) {
+                                break;
+                            }
+                            bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                            tile = match self.game.map.tiles.get(bullet_pos) {
+                                // out of map
+                                None => break,
+                                Some(t) => *t,
+                            };
+                            // wall on the tile we're entering?
+                            if tile.walls.get(&bullet_dir.rotated().rotated()) {
+                                break;
+                            }
+                            for player2 in &mut self.game.players {
+                                if player2.public_state.position == bullet_pos {
+                                    debug!(
+                                        "PLayer {} shot player {:?}",
+                                        player_i,
+                                        player2.connected.upgrade().map(|c| c.player_name.clone())
+                                    );
+                                    player2.draw_spam();
+                                    animations.push(Animation::BulletFlight {
+                                        from: start_pos,
+                                        to: bullet_pos,
+                                        direction: bullet_dir,
+                                        is_from_tank: true,
+                                    });
+                                    break 'robot_bullet_flight;
+                                }
+                            }
+                        }
+                    }
+                    self.queue_update(&QueueUpdateType::AnimationsOnly(animations));
+                    Checkpoints
+                }
+                Checkpoints => {
+                    let mut winner = None;
+                    for player_i in 0..self.game.players.len() {
+                        let player = self.game.players.get_mut(player_i).unwrap();
+                        if self.game.map.checkpoints[player.public_state.checkpoint]
+                            == player.public_state.position
+                        {
+                            player.public_state.checkpoint += 1;
+                            if winner.is_none()
+                                && player.public_state.checkpoint == self.game.map.checkpoints.len()
+                            {
+                                winner = Some(player_i);
+                            }
+                        }
+                    }
+
+                    if let Some(player_i) = winner {
+                        {
+                            info!(
+                                "Game won by {}",
+                                self.game
+                                    .players
+                                    .get(player_i)
+                                    .unwrap()
+                                    .connected
+                                    .upgrade()
+                                    .map_or_else(
+                                        || "<disconnected player>".to_owned(),
+                                        |p| p.player_name.clone()
+                                    )
+                            );
+                            self.game.phase = GamePhase::HasWinner(player_i);
+                            return;
+                        }
+                    }
+
+                    if register < 4 {
+                        #[allow(clippy::shadow_unrelated)]
+                        if let GamePhase::Moving { register, .. } = &mut self.game.phase {
+                            *register += 1;
+                        } else {
+                            unreachable!();
+                        }
+                        PlayerCards
+                    } else {
+                        let cards = match &self.game.phase {
+                            GamePhase::Moving { cards, .. } => cards.clone(),
+                            _ => unreachable!(),
+                        };
+                        for (player, player_programmed) in
+                            self.game.players.iter_mut().zip(cards.iter())
+                        {
+                            player.discard_pile.extend(player_programmed);
+                            player.discard_pile.extend(mem::take(&mut player.hand));
+                            player.hand = player.draw_n(9);
+                            player.public_state.is_rebooting = false;
+                        }
+                        self.game.phase = GamePhase::Programming(
+                            repeat(None).take(self.game.players.len()).collect(),
+                        );
+                        // todo
+                        return;
+                    }
+                }
+            };
+            match &mut self.game.phase {
+                GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
+                _ => unreachable!(),
+            }
         }
     }
 }
-
+/// Small util that sorts by priority
 #[derive(PartialEq, Eq)]
-struct AntennaDist {
+struct Priority {
     me: Position,
     antenna: Position,
 }
 
-impl AntennaDist {
+impl Priority {
     const fn dist(&self) -> usize {
         usize::abs_diff(self.antenna.x, self.me.x) + usize::abs_diff(self.antenna.y, self.me.y)
     }
@@ -373,7 +814,7 @@ impl AntennaDist {
         -x
     }
 }
-impl PartialOrd for AntennaDist {
+impl PartialOrd for Priority {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self == other {
             return Some(core::cmp::Ordering::Equal);
@@ -387,466 +828,8 @@ impl PartialOrd for AntennaDist {
             .partial_cmp(&other.sortable_bearing())
     }
 }
-impl Ord for AntennaDist {
+impl Ord for Priority {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
-}
-
-fn execute_card(
-    mut game_arc: Arc<RwLock<Game>>,
-    player_i: usize,
-    register_i: usize,
-) -> BoxFuture<'static, ()> {
-    async move {
-        use Card::*;
-        let mut guard = game_arc.write().await;
-        let game = &mut *guard;
-        let GamePhase::Moving { cards, .. } = &mut game.phase
-    else {
-        panic!("Invalid state")
-    };
-        let card: &mut Card = cards
-            .get_mut(player_i)
-            .unwrap()
-            .get_mut(register_i)
-            .unwrap();
-        let player = game.players.get_mut(player_i).unwrap();
-        debug!("Executing {:?} for {}", &card, player_i);
-
-        match card {
-            SPAM => {
-                *card = player.draw_one();
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-                execute_card(game_arc, player_i, register_i).await;
-            }
-            Move1 => {
-                game.mov(player_i, true, None);
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            Move2 => {
-                let moved = game.mov(player_i, true, None);
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-                if moved == (MoveResult::Moved { rebooted: false }) {
-                    game_arc.write().await.mov(player_i, true, None);
-                    notify_sleep(&mut game_arc).await;
-                }
-            }
-            Move3 => {
-                let moved = game.mov(player_i, true, None);
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-                if moved == (MoveResult::Moved { rebooted: false }) {
-                    let moved2 = game_arc.write().await.mov(player_i, true, None);
-                    notify_sleep(&mut game_arc).await;
-                    if moved2 == (MoveResult::Moved { rebooted: false }) {
-                        game_arc.write().await.mov(player_i, true, None);
-                        notify_sleep(&mut game_arc).await;
-                    }
-                }
-            }
-            Reverse1 => {
-                let dir = player.public_state.direction.to_basic().rotated().rotated();
-                game.mov(player_i, true, Some(dir));
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            TurnRight => {
-                player.public_state.direction = player.public_state.direction.rotated();
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            TurnLeft => {
-                player.public_state.direction = player.public_state.direction.rotated_ccw();
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            UTurn => {
-                player.public_state.direction = player.public_state.direction.rotated().rotated();
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-            }
-            Again => {
-                if register_i == 0 {
-                    let replacement_card = player.draw_one();
-                    player
-                        .discard_pile
-                        .push(mem::replace(card, replacement_card));
-                    drop(guard);
-                    notify_sleep(&mut game_arc).await;
-                    execute_card(game_arc, player_i, register_i).await;
-                } else {
-                    drop(guard);
-                    execute_card(game_arc, player_i, register_i - 1).await;
-                }
-            }
-        }
-    }
-    .boxed()
-}
-
-pub async fn run_moving_phase(mut game_arc: Arc<RwLock<Game>>) {
-    use RegisterMovePhase::*;
-    {
-        let mut guard = game_arc.write().await;
-        let game = &mut *guard;
-        if let GamePhase::Programming(cards) = &game.phase {
-            game.phase = GamePhase::Moving {
-                cards: cards.iter().map(|c| c.unwrap()).collect(),
-                register: 0,
-                register_phase: RegisterMovePhase::PlayerCards,
-            };
-        }
-    }
-    loop {
-        let register;
-        let register_phase;
-        let player_i_sorted_by_priority = {
-            let game = game_arc.read().await;
-            match &game.phase {
-                GamePhase::Moving {
-                    register: reg,
-                    register_phase: phase,
-                    ..
-                } => {
-                    register = *reg;
-                    register_phase = *phase;
-                }
-                _ => panic!("Invalid state"),
-            };
-            let mut players_numbers: Vec<usize> = (0..game.players.len()).collect();
-            players_numbers.sort_by_key(|i| AntennaDist {
-                me: unsafe { game.players.get_unchecked(*i) }
-                    .public_state
-                    .position,
-                antenna: game.map.antenna,
-            });
-            players_numbers
-        };
-        debug!("Executing phase {}.{:?}", register, register_phase);
-        let next_register_phase = match register_phase {
-            PlayerCards => {
-                notify_sleep(&mut game_arc).await;
-                for player_i in player_i_sorted_by_priority {
-                    if game_arc
-                        .read()
-                        .await
-                        .players
-                        .get(player_i)
-                        .unwrap()
-                        .public_state
-                        .is_rebooting
-                    {
-                        continue;
-                    }
-                    execute_card(Arc::clone(&game_arc), player_i, register).await;
-                }
-                FastBelts
-            }
-            FastBelts => {
-                for player_i in player_i_sorted_by_priority {
-                    for _ in 0..2 {
-                        let mut guard = game_arc.write().await;
-                        let game = &mut *guard;
-                        let pos = game.players.get(player_i).unwrap().public_state.position;
-                        if let TileType::Belt(true, dir) = game.map.tiles.get(pos).unwrap().typ {
-                            debug!("Moving player {} on a fast belt", player_i);
-                            let moved = game.mov(player_i, false, Some(dir));
-                            if (moved == MoveResult::Moved { rebooted: false }) {
-                                let player_state =
-                                    &mut game.players.get_mut(player_i).unwrap().public_state;
-                                if let Some(Tile {
-                                    typ: TileType::Belt(true, dir2),
-                                    ..
-                                }) = game.map.tiles.get(player_state.position)
-                                {
-                                    if *dir2 == dir.rotated() {
-                                        player_state.direction = player_state.direction.rotated();
-                                    } else if *dir2 == dir.rotated_ccw() {
-                                        player_state.direction =
-                                            player_state.direction.rotated_ccw();
-                                    }
-                                }
-                            }
-                            drop(guard);
-                            notify_sleep(&mut game_arc).await;
-                        }
-                    }
-                }
-                SlowBelts
-            }
-            SlowBelts => {
-                for player_i in player_i_sorted_by_priority {
-                    let mut guard = game_arc.write().await;
-                    let game = &mut *guard;
-                    let pos = game.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::Belt(false, dir) = game.map.tiles.get(pos).unwrap().typ {
-                        debug!("Moving player {} on a slow belt", player_i);
-                        let moved = game.mov(player_i, false, Some(dir));
-                        if (moved == MoveResult::Moved { rebooted: false }) {
-                            let player_state =
-                                &mut game.players.get_mut(player_i).unwrap().public_state;
-                            if let Some(Tile {
-                                typ: TileType::Belt(false, dir2),
-                                ..
-                            }) = game.map.tiles.get(player_state.position)
-                            {
-                                if *dir2 == dir.rotated() {
-                                    player_state.direction = player_state.direction.rotated();
-                                } else if *dir2 == dir.rotated_ccw() {
-                                    player_state.direction = player_state.direction.rotated_ccw();
-                                }
-                            }
-                        }
-                        drop(guard);
-                        notify_sleep(&mut game_arc).await;
-                    }
-                }
-                PushPanels
-            }
-            PushPanels => {
-                for player_i in player_i_sorted_by_priority {
-                    let mut game = game_arc.write().await;
-                    let pos = game.players.get(player_i).unwrap().public_state.position;
-                    if let TileType::PushPanel(dir, active) = game.map.tiles.get(pos).unwrap().typ {
-                        if *active.get(register).unwrap() {
-                            debug!("Moving player {} from a push panel", player_i);
-                            game.mov(player_i, true, Some(dir));
-                            drop(game);
-                            notify_sleep(&mut game_arc).await;
-                        }
-                    }
-                }
-                Rotations
-            }
-            Rotations => {
-                let mut guard = game_arc.write().await;
-                // explicitely separating guard to satisfy borrow rules - can't borrow from guard twice
-                // at once (deref), but can deref once and then borrow different fields
-                let game: &mut Game = &mut *guard;
-                let mut any_rotated = false;
-                for player_i in player_i_sorted_by_priority {
-                    let player_state = &mut game.players.get_mut(player_i).unwrap().public_state;
-                    if let TileType::Rotation(is_cw) =
-                        game.map.tiles.get(player_state.position).unwrap().typ
-                    {
-                        let dir = &mut player_state.direction;
-                        *dir = if is_cw {
-                            dir.rotated()
-                        } else {
-                            dir.rotated_ccw()
-                        };
-                        any_rotated = true;
-                    }
-                }
-                drop(guard);
-                if any_rotated {
-                    notify_sleep(&mut game_arc).await;
-                }
-                Lasers
-            }
-            // the code for lasers and robot lasers is mostly the same, but with one difference:
-            // - for robot lasers, we can't hit the tile we're starting on (you can't shoot yourself),
-            //   so we start the loop with "incrementing" bullet position (incl. wall checks)
-            // - for map lasers, the position increment is moved to the end of the loop, as we might
-            //   already hit a robot on the tile we're shooting from
-            Lasers => {
-                let mut guard = game_arc.write().await;
-                let game = &mut *guard;
-                let mut animations = Vec::new();
-                for (start_pos, bullet_dir) in &game.map.lasers {
-                    let mut bullet_pos = *start_pos;
-                    let mut tile = *game.map.tiles.get(bullet_pos).unwrap();
-                    'map_bullet_flight: loop {
-                        for player2 in &mut game.players {
-                            if player2.public_state.position == bullet_pos {
-                                debug!(
-                                    "Laser shot player {:?}",
-                                    player2.connected.upgrade().map(|c| c.player_name.clone())
-                                );
-                                player2.draw_spam();
-                                animations.push(Animation::BulletFlight(
-                                    *start_pos,
-                                    bullet_pos,
-                                    *bullet_dir,
-                                    false,
-                                ));
-                                break 'map_bullet_flight;
-                            }
-                        }
-                        // wall on the tile we're leaving?
-                        if tile.walls.get(bullet_dir) {
-                            break;
-                        }
-                        bullet_pos = bullet_dir.apply_to(&bullet_pos);
-                        tile = match game.map.tiles.get(bullet_pos) {
-                            // out of map
-                            None => break,
-                            Some(t) => *t,
-                        };
-                        // wall on the tile we're entering?
-                        if tile.walls.get(&bullet_dir.rotated().rotated()) {
-                            break;
-                        }
-                    }
-                }
-                for player_i in player_i_sorted_by_priority {
-                    let player_state = game.players.get(player_i).unwrap().public_state;
-                    if player_state.is_rebooting {
-                        continue;
-                    }
-                    let bullet_dir = player_state.direction.to_basic();
-                    let start_pos = player_state.position;
-                    let mut bullet_pos = start_pos;
-                    let mut tile = *game.map.tiles.get(bullet_pos).unwrap();
-                    'robot_bullet_flight: loop {
-                        // wall on the tile we're leaving?
-                        if tile.walls.get(&bullet_dir) {
-                            break;
-                        }
-                        bullet_pos = bullet_dir.apply_to(&bullet_pos);
-                        tile = match game.map.tiles.get(bullet_pos) {
-                            // out of map
-                            None => break,
-                            Some(t) => *t,
-                        };
-                        // wall on the tile we're entering?
-                        if tile.walls.get(&bullet_dir.rotated().rotated()) {
-                            break;
-                        }
-                        for player2 in &mut game.players {
-                            if player2.public_state.position == bullet_pos {
-                                debug!(
-                                    "PLayer {} shot player {:?}",
-                                    player_i,
-                                    player2.connected.upgrade().map(|c| c.player_name.clone())
-                                );
-                                player2.draw_spam();
-                                animations.push(Animation::BulletFlight(
-                                    start_pos, bullet_pos, bullet_dir, true,
-                                ));
-                                break 'robot_bullet_flight;
-                            }
-                        }
-                    }
-                }
-                let futures = game
-                    .players
-                    .iter()
-                    .filter_map(|p: &Player| {
-                        p.connected.upgrade().map(|x|
-                        // need to clone the animations here, otherwise some weird lifetime-in-async issue occurs
-                        // (shows obscure message, probably related https://github.com/rust-lang/rust/issues/89976)
-                         (x, ServerMessage::Animations(animations.clone())))
-                    })
-                    .into_iter()
-                    .map(async move |(player, msg)| {
-                        player.socket.write().await.send_message(msg).await;
-                    });
-                join_all(futures).await;
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-
-                Checkpoints
-            }
-            Checkpoints => {
-                let mut winner = None;
-
-                let mut guard = game_arc.write().await;
-                let game: &mut Game = &mut *guard;
-                for player_i in player_i_sorted_by_priority {
-                    let player = game.players.get_mut(player_i).unwrap();
-                    if *game
-                        .map
-                        .checkpoints
-                        .get(player.public_state.checkpoint)
-                        .unwrap()
-                        == player.public_state.position
-                    {
-                        player.public_state.checkpoint += 1;
-                        if winner.is_none()
-                            && player.public_state.checkpoint == game.map.checkpoints.len()
-                        {
-                            winner = Some(player_i);
-                        }
-                    }
-                }
-
-                drop(guard);
-                notify_sleep(&mut game_arc).await;
-
-                {
-                    if let Some(player_i) = winner {
-                        {
-                            #[allow(clippy::shadow_unrelated)]
-                            let mut game = game_arc.write().await;
-                            info!(
-                                "Game won by {}",
-                                game.players
-                                    .get(player_i)
-                                    .unwrap()
-                                    .connected
-                                    .upgrade()
-                                    .map_or_else(
-                                        || "<disconnected player>".to_owned(),
-                                        |p| p.player_name.clone()
-                                    )
-                            );
-                            game.phase = GamePhase::HasWinner(player_i);
-                            game.notify_update().await;
-                            drop(game);
-                            return;
-                        }
-                    }
-                }
-
-                if register < 4 {
-                    #[allow(clippy::shadow_unrelated)]
-                    let mut game = game_arc.write().await;
-                    #[allow(clippy::shadow_unrelated)]
-                    if let GamePhase::Moving { register, .. } = &mut game.phase {
-                        *register += 1;
-                    } else {
-                        panic!("Invalid state");
-                    }
-                    drop(game);
-                    PlayerCards
-                } else {
-                    #[allow(clippy::shadow_unrelated)]
-                    let mut game = game_arc.write().await;
-                    let cards = match &game.phase {
-                        GamePhase::Moving { cards, .. } => cards.clone(),
-                        _ => panic!("Invalid state"),
-                    };
-                    for (player, player_programmed) in game.players.iter_mut().zip(cards.iter()) {
-                        player.discard_pile.extend(player_programmed);
-                        player.discard_pile.extend(mem::take(&mut player.hand));
-                        player.hand = player.draw_n(9);
-                        player.public_state.is_rebooting = false;
-                    }
-                    game.phase =
-                        GamePhase::Programming(repeat(None).take(game.players.len()).collect());
-                    debug!("Set game phase back to programming");
-                    game.notify_update().await;
-                    return;
-                }
-            }
-        };
-        let mut game = game_arc.write().await;
-        #[allow(clippy::shadow_unrelated)]
-        match &mut game.phase {
-            GamePhase::Moving { register_phase, .. } => *register_phase = next_register_phase,
-            _ => panic!("Invalid state"),
-        }
-    }
-}
-
-/// Asking for a mutable `game_arc` reference to help check that it isn't borrowed (i.e. locked)
-/// Caller could of course clone the arc and pass that, but this is 'defense-in-depth' against deadlocks
-async fn notify_sleep(game_arc: &mut Arc<RwLock<Game>>) {
-    game_arc.write().await.notify_update().await;
-    sleep(Duration::from_secs(1)).await;
 }

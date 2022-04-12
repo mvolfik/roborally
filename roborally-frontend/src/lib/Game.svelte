@@ -2,9 +2,12 @@
   import {
     AssetMap,
     CardWrapper,
+    create_init_message,
+    create_program_cards_message,
     GamePhase,
-    MessageProcessor,
+    parse_message,
     PlayerGameStateView,
+    StateArrayItem,
   } from "frontend-wasm";
   import { createEventDispatcher, onMount } from "svelte";
   import { fly } from "svelte/transition";
@@ -12,40 +15,56 @@
   import { writable } from "svelte/store";
   import Map from "./Map.svelte";
   import Programmer from "./Programmer.svelte";
-  import { getCardAsset } from "./utils";
+  import { fetchMap, getCardAsset } from "./utils";
   import Collapsible from "./Collapsible.svelte";
 
   export let game_name: string;
   export let name: string;
   export let seat: number;
+  export let map_name: string;
 
   let connection: WebSocket;
   let map: AssetMap;
   let mapComponent: Map;
 
-  let stateQueue = [];
+  let stateArray: Array<StateArrayItem> = [];
+  let currentSimpleState: PlayerGameStateView;
+  /**
+   * number => index in stateArray
+   * undefined => currentSimpleState
+   */
+  let stateIndicator: number | undefined;
   let state: PlayerGameStateView;
+  $: state =
+    stateIndicator === undefined
+      ? currentSimpleState
+      : stateArray[stateIndicator].state;
+
+  let movementPlayback: "automatic" | "manual" = "automatic";
+  let automaticPlaybackDelay = 1000;
 
   function handleProgrammingDone(
     e: CustomEvent<
       [CardWrapper, CardWrapper, CardWrapper, CardWrapper, CardWrapper]
     >
   ) {
-    connection.send(
-      MessageProcessor.create_program_cards_message(...e.detail).buffer
-    );
+    connection.send(create_program_cards_message(...e.detail).buffer);
   }
 
-  function mainHandler(e: MessageEvent) {
-    MessageProcessor.handle_message(
-      new Uint8Array(e.data),
-      (nextState) => (stateQueue = [...stateQueue, nextState]),
-      alert,
-      mapComponent?.handleBullet ?? (() => {})
-    );
+  function messageHandler(e: MessageEvent) {
+    let msg = parse_message(new Uint8Array(e.data));
+    if (typeof msg === "string") {
+      alert(msg);
+    } else if (Array.isArray(msg)) {
+      stateArray = msg;
+      stateIndicator = 0;
+    } else {
+      currentSimpleState = msg;
+    }
   }
 
   onMount(() => {
+    fetchMap(map_name).then((m) => (map = m.assets));
     connection = new WebSocket(
       `${window.location.protocol.replace("http", "ws")}//${
         window.location.host
@@ -55,32 +74,16 @@
     connection.onclose = () => {
       disconnect();
     };
-    connection.addEventListener(
-      "message",
-      (e) => {
-        try {
-          map = MessageProcessor.expect_init_message(new Uint8Array(e.data));
-          connection.addEventListener("message", mainHandler);
-        } catch (e) {
-          alert(e);
-          disconnect();
-        }
-      },
-      { once: true }
-    );
-
+    connection.addEventListener("message", messageHandler);
     connection.addEventListener(
       "open",
-      () =>
-        connection.send(
-          MessageProcessor.create_init_message(name, seat).buffer
-        ),
+      () => connection.send(create_init_message(name, seat).buffer),
       { once: true }
     );
 
     return () => {
       connection.close();
-      connection.removeEventListener("message", mainHandler);
+      connection.removeEventListener("message", messageHandler);
     };
   });
 
@@ -101,7 +104,7 @@
   $: {
     if (state === undefined) break $;
     const newPhase = state.phase;
-    if (newPhase !== phase)
+    if (newPhase !== phase) {
       if (newPhase === GamePhase.Programming) {
         programmerExpandedStore.set(true);
       } else if (newPhase === GamePhase.Moving) {
@@ -109,7 +112,8 @@
       } else if (newPhase === GamePhase.ProgrammingMyselfDone) {
         playersInfoExpandedStore.set(true);
       }
-    phase = newPhase;
+      phase = newPhase;
+    }
   }
 </script>
 
@@ -121,7 +125,7 @@
 />
 <div
   class="outer"
-  style:--seat-color={`hsla(${3.979 + seat * 0.9}rad, 93%, 22%, 0.62)`}
+  style:--seat-color="hsla({3.979 + seat * 0.9}rad, 93%, 22%, 0.62)"
 >
   {#if map === undefined || state === undefined}
     <p style:text-align="center">Connecting...</p>
@@ -137,30 +141,91 @@
       key={phase === GamePhase.Moving}
       expandedStore={gamePhaseExpandedStore}
     >
-      {#if phase === GamePhase.HasWinner}
-        <p class="phase-simple-text">
-          Game won by {state.get_winner_name()}
-        </p>
-      {:else if phase === GamePhase.Moving}
-        <div>
-          Executing movement register: {state.moving_phase_register_number + 1}
-        </div>
-        <div
-          class="register-move-phase-indicator"
-          style:--register-phase={state.moving_phase_register_phase + 1}
-        >
-          <span class="marker">&gt;</span>
-          <span>Programmed cards</span>
-          <span>Fast belts</span>
-          <span>Slow belts</span>
-          <span>Push panels</span>
-          <span>Rotations</span>
-          <span>Lasers</span>
-          <span>Checkpoints</span>
-        </div>
-      {:else}
-        <p class="phase-simple-text">Get ready for the next round!</p>
-      {/if}
+      <div style:padding="0.7rem 1rem">
+        {#if phase === GamePhase.HasWinner}
+          <p class="phase-simple-text">
+            Game won by {state.get_winner_name()}
+          </p>
+        {:else if phase === GamePhase.Moving}
+          <div>
+            Executing movement register: {state.moving_phase_register_number +
+              1}
+          </div>
+          <div
+            class="register-move-phase-indicator"
+            style:--register-phase={state.moving_phase_register_phase + 1}
+          >
+            <span class="marker">&gt;</span>
+            <span>Programmed cards</span>
+            <span>Fast belts</span>
+            <span>Slow belts</span>
+            <span>Push panels</span>
+            <span>Rotations</span>
+            <span>Lasers</span>
+            <span>Checkpoints</span>
+          </div>
+        {:else}
+          <p class="phase-simple-text">Get ready for the next round!</p>
+        {/if}
+        {#if phase !== GamePhase.HasWinner}
+          <div>
+            <p>Show player movement:</p>
+            <p>
+              <label>
+                <input
+                  type="radio"
+                  name="movement-playback"
+                  value="automatic"
+                  bind:group={movementPlayback}
+                />
+                Automatically play
+              </label>
+              <label>
+                with delay:
+                <input
+                  type="number"
+                  min="100"
+                  max="5000"
+                  step="100"
+                  bind:value={automaticPlaybackDelay}
+                />
+                ms
+              </label>
+            </p>
+            <p>
+              <label>
+                <input
+                  type="radio"
+                  name="movement-playback"
+                  value="manual"
+                  bind:group={movementPlayback}
+                />
+                Manually
+              </label>
+              <button
+                on:click={() => {
+                  do {
+                    stateIndicator -= 1;
+                  } while (!stateArray[stateIndicator].has_state);
+                }}
+                disabled={stateIndicator === undefined || stateIndicator <= 0}
+                >Previous</button
+              >
+              <button
+                on:click={() => {
+                  do {
+                    stateArray[stateIndicator++].process_animations(
+                      mapComponent?.handleBullet ?? (() => {})
+                    );
+                  } while (!stateArray[stateIndicator].has_state);
+                }}
+                disabled={stateIndicator === undefined ||
+                  stateIndicator >= stateArray.length - 1}>Next</button
+              >
+            </p>
+          </div>
+        {/if}
+      </div>
     </Collapsible>
 
     <!-- Right panel: player infoboxes -->
@@ -268,7 +333,7 @@
   }
 
   .phase-simple-text {
-    margin: 0.7rem 1rem;
+    margin: 0;
   }
 
   .player-infobox {
