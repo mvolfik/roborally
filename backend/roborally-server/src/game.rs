@@ -195,6 +195,43 @@ impl Game {
         join_all(futures).await;
     }
 
+    pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
+        let player = self.players.get_mut(seat).unwrap();
+        let GamePhase::Programming(vec) = &mut self.phase
+        else {
+            return Err("Programming phase isn't active right now".to_owned());
+        };
+        let my_programmed_ref = match vec.get_mut(seat).unwrap() {
+            Some(_) => {
+                return Err("You have already programmed your cards for this round".to_owned());
+            }
+            x @ None => x,
+        };
+        let mut used_hand_indexes = HashSet::new();
+        'outer: for picked_card in cards {
+            for (i, hand_card) in player.hand.iter().enumerate() {
+                if *hand_card == picked_card && !used_hand_indexes.contains(&i) {
+                    used_hand_indexes.insert(i);
+                    continue 'outer;
+                }
+            }
+            // did not find this card (unused) in hand
+            return Err(format!(
+                "No cheating! {:?} isn't in your hand (enough times)",
+                picked_card
+            ));
+        }
+        *my_programmed_ref = Some(cards);
+
+        let mut i = 0;
+        player.hand.retain(move |_| {
+            let res = !used_hand_indexes.contains(&i);
+            i += 1;
+            res
+        });
+        Ok(())
+    }
+
     fn force_move_to(&mut self, player_i: usize, pos: Position, pushing_direction: Direction) {
         if !self
             .map
@@ -312,43 +349,6 @@ impl Game {
         MoveResult::Moved {
             rebooted: should_reboot,
         }
-    }
-
-    pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
-        let player = self.players.get_mut(seat).unwrap();
-        let GamePhase::Programming(vec) = &mut self.phase
-        else {
-            return Err("Programming phase isn't active right now".to_owned());
-        };
-        let my_programmed_ref = match vec.get_mut(seat).unwrap() {
-            Some(_) => {
-                return Err("You have already programmed your cards for this round".to_owned());
-            }
-            x @ None => x,
-        };
-        let mut used_hand_indexes = HashSet::new();
-        'outer: for picked_card in cards {
-            for (i, hand_card) in player.hand.iter().enumerate() {
-                if *hand_card == picked_card && !used_hand_indexes.contains(&i) {
-                    used_hand_indexes.insert(i);
-                    continue 'outer;
-                }
-            }
-            // did not find this card (unused) in hand
-            return Err(format!(
-                "No cheating! {:?} isn't in your hand (enough times)",
-                picked_card
-            ));
-        }
-        *my_programmed_ref = Some(cards);
-
-        let mut i = 0;
-        player.hand.retain(move |_| {
-            let res = !used_hand_indexes.contains(&i);
-            i += 1;
-            res
-        });
-        Ok(())
     }
 }
 
