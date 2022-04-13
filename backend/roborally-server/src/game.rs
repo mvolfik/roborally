@@ -107,7 +107,7 @@ pub struct Game {
 
 impl Game {
     fn get_state_for_player(&mut self, seat: usize) -> PlayerGameStateView {
-        let this_player_state = self.players.get(seat).unwrap();
+        let player = &self.players[seat];
         let phase: GamePhaseView = match &self.phase {
             GamePhase::Moving {
                 cards,
@@ -116,22 +116,22 @@ impl Game {
             } => GamePhaseView::Moving {
                 cards: cards
                     .iter()
-                    .map(|card_array| *card_array.get(*register).unwrap())
+                    .map(|card_array| card_array[*register])
                     .collect(),
-                my_registers: *cards.get(seat).unwrap(),
+                my_registers: cards[seat],
                 register: *register,
                 register_phase: *register_phase,
             },
             GamePhase::Programming(programmed) => GamePhaseView::Programming {
                 ready: programmed.iter().map(Option::is_some).collect(),
-                my_cards: *programmed.get(seat).unwrap(),
+                my_cards: programmed[seat],
             },
             GamePhase::HasWinner(player_i) => GamePhaseView::HasWinner(*player_i),
         };
         PlayerGameStateView::new(
             self.players.iter().map(|p| p.public_state).collect(),
             phase,
-            this_player_state.hand.clone(),
+            player.hand.clone(),
             self.players
                 .iter()
                 .map(|p| p.connected.upgrade().map(|c| c.player_name.clone()))
@@ -184,7 +184,7 @@ impl Game {
     /// After storing the programmed cards, this method checks if all players have programmed their registers now.
     /// If so, moving phase is executed and state array sent to each player
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
-        let player = self.players.get_mut(seat).unwrap();
+        let player = &mut self.players[seat];
         let my_programmed_ref = match &mut self.phase {
             GamePhase::Programming(vec) => &mut vec[seat],
             _ => return Err("Programming phase isn't active right now".to_owned()),
@@ -317,12 +317,7 @@ impl<'a> MovingPhaseManager<'a> {
                 pushing_direction,
             );
         }
-        self.game
-            .players
-            .get_mut(player_i)
-            .unwrap()
-            .public_state
-            .position = pos;
+        self.game.players[player_i].public_state.position = pos;
     }
 
     /// Move a player in given direction, pushing players in the way if needed
@@ -333,7 +328,7 @@ impl<'a> MovingPhaseManager<'a> {
     ///
     /// (this method isn't named `move` since it's a Rust keyword)
     fn mov(&mut self, player_i: usize, direction: Direction) -> bool {
-        let player = self.game.players.get_mut(player_i).unwrap();
+        let player = &mut self.game.players[player_i];
         let origin_pos = player.public_state.position;
 
         let Some(origin_tile) = self.game.map.tiles.get(origin_pos)
@@ -396,7 +391,7 @@ impl<'a> MovingPhaseManager<'a> {
 
         let reboot_token = self.game.map.reboot_token;
         for player_i in mem::take(&mut self.reboot_queue) {
-            let player = self.game.players.get_mut(player_i).unwrap();
+            let player = &mut self.game.players[player_i];
             player.draw_spam();
             player.draw_spam();
             player.public_state.direction = player
@@ -514,14 +509,7 @@ impl<'a> MovingPhaseManager<'a> {
             let next_register_phase = match register_phase {
                 PlayerCards => {
                     for player_i in player_indexes_by_priority {
-                        if !self
-                            .game
-                            .players
-                            .get(player_i)
-                            .unwrap()
-                            .public_state
-                            .is_rebooting
-                        {
+                        if !self.game.players[player_i].public_state.is_rebooting {
                             self.execute_card(player_i, register);
                         }
                     }
@@ -644,17 +632,11 @@ impl<'a> MovingPhaseManager<'a> {
                 }
                 PushPanels => {
                     for player_i in player_indexes_by_priority {
-                        let pos = self
-                            .game
-                            .players
-                            .get(player_i)
-                            .unwrap()
-                            .public_state
-                            .position;
+                        let pos = self.game.players[player_i].public_state.position;
                         if let TileType::PushPanel(dir, active) =
                             self.game.map.tiles.get(pos).unwrap().typ
                         {
-                            if *active.get(register).unwrap() {
+                            if active[register] {
                                 self.mov(player_i, dir);
                                 self.execute_reboots();
                             }
@@ -665,8 +647,7 @@ impl<'a> MovingPhaseManager<'a> {
                 Rotations => {
                     let mut any_rotated = false;
                     for player_i in player_indexes_by_priority {
-                        let player_state =
-                            &mut self.game.players.get_mut(player_i).unwrap().public_state;
+                        let player_state = &mut self.game.players[player_i].public_state;
                         if let TileType::Rotation(is_cw) =
                             self.game.map.tiles.get(player_state.position).unwrap().typ
                         {
@@ -724,7 +705,7 @@ impl<'a> MovingPhaseManager<'a> {
                         }
                     }
                     for player_i in 0..self.game.players.len() {
-                        let player_state = self.game.players.get(player_i).unwrap().public_state;
+                        let player_state = self.game.players[player_i].public_state;
                         if player_state.is_rebooting {
                             // rebooting players don't shoot
                             continue;
@@ -768,7 +749,7 @@ impl<'a> MovingPhaseManager<'a> {
                 Checkpoints => {
                     let mut winner = None;
                     for player_i in 0..self.game.players.len() {
-                        let player = self.game.players.get_mut(player_i).unwrap();
+                        let player = &mut self.game.players[player_i];
                         if self.game.map.checkpoints[player.public_state.checkpoint]
                             == player.public_state.position
                         {
@@ -787,9 +768,7 @@ impl<'a> MovingPhaseManager<'a> {
                             info!(
                                 "Game won by {}",
                                 self.game
-                                    .players
-                                    .get(player_i)
-                                    .unwrap()
+                                    .players[player_i]
                                     .connected
                                     .upgrade()
                                     .map_or_else(

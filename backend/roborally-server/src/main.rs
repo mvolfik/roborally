@@ -12,7 +12,7 @@
 #![warn(clippy::allow_attributes_without_reason)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::else_if_without_else)]
-// enable later: #![warn(clippy::get_unwrap)]
+#![warn(clippy::get_unwrap)]
 #![warn(clippy::if_then_some_else_none)]
 #![warn(clippy::let_underscore_must_use)]
 #![warn(clippy::shadow_reuse)]

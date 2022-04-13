@@ -106,7 +106,7 @@ impl Parse for [bool; 5] {
         for c in value.chars() {
             match c.to_digit(10) {
                 Some(d) if d > last_digit && d <= 5 => {
-                    *res.get_mut(d as usize - 1).unwrap() = true;
+                    res[d as usize - 1] = true;
                     last_digit = d;
                 }
                 _ => {
