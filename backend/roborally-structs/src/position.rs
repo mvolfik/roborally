@@ -8,15 +8,15 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
 pub struct Position {
-    pub x: usize,
-    pub y: usize,
+    pub x: i16,
+    pub y: i16,
 }
 
 impl Position {
     /// Whether the rectangle [origin, self) contains other
     #[inline]
     pub const fn contains(self, other: Self) -> bool {
-        other.x < self.x && other.y < self.y
+        0 <= other.x && other.x < self.x && 0 <= other.y && other.y < self.y
     }
 }
 

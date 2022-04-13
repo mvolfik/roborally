@@ -1,10 +1,5 @@
 <script lang="ts">
-  import type {
-    AssetMap,
-    PlayerGameStateView,
-    PlayerPublicStateWrapper,
-    Position,
-  } from "frontend-wasm";
+  import type { AssetMap, PlayerGameStateView, Position } from "frontend-wasm";
   import robot from "../assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
   import { getTexture } from "./utils";
@@ -64,21 +59,6 @@
       });
     });
   }
-
-  let players: Map<string, Array<PlayerPublicStateWrapper>> = new Map();
-  $: {
-    players = new Map();
-    const playersN = state.players;
-    for (let i = 0; i < playersN; i++) {
-      const player = state.get_player(i);
-      const pos = player.position;
-      const key = `${pos.x},${pos.y}`;
-      if (!players.has(key)) {
-        players.set(key, []);
-      }
-      players.get(key).push(player);
-    }
-  }
 </script>
 
 <div class="outer">
@@ -110,9 +90,14 @@
           </div>
         {/each}
       {/each}
-      {#each [...Array(state.players)].map( (_, i) => state.get_player(i) ) as player}
+      {#each [...Array(state.players)].map( (_, player_i) => state.get_player(player_i) ) as player}
         {@const pos = player.position}
-        <div class="robot" style:--x={pos.x} style:--y={pos.y}>
+        <div
+          class="robot"
+          style:--x={pos.x}
+          style:--y={pos.y}
+          class:hidden={player.is_hidden}
+        >
           <img src={robot} alt="Robot" style={player.style} />
           {#if player.name !== undefined}
             <div>{player.name}</div>
@@ -128,6 +113,9 @@
     top: calc(var(--tile-size) * var(--y));
     left: calc(var(--tile-size) * var(--x));
     pointer-events: none;
+  }
+  .robot.hidden {
+    transform: scale(0);
   }
   .robot,
   .robot img {
@@ -172,13 +160,4 @@
     position: absolute;
     transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
   }
-  /* div.tile:hover::after {
-    content: "";
-    display: block;
-    height: 100%;
-    width: 100%;
-    border: 2px dashed red;
-    box-sizing: border-box;
-    position: absolute;
-  } */
 </style>

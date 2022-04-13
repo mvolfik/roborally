@@ -16,8 +16,7 @@ pub struct SocketWriter(SplitSink<WebSocket, Message>);
 impl SocketWriter {
     pub async fn close_with_notice(&mut self, msg: String) {
         info!("Closing connection with message: {}", &msg);
-        self.send_message(ServerMessage::Notice(msg)).await;
-        if let Err(e) = self.0.send(Message::close()).await {
+        if let Err(e) = self.0.send(Message::close_with(1000_u16, msg)).await {
             warn!("Error when closing connection: {}", e);
         }
     }

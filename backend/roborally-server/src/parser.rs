@@ -34,7 +34,7 @@ pub trait Parse: Sized {
 }
 
 trait SupportedNum: FromStr {}
-impl SupportedNum for usize {}
+impl SupportedNum for i16 {}
 impl SupportedNum for u8 {}
 
 impl<T: SupportedNum> Parse for T {
@@ -48,8 +48,8 @@ impl Parse for Position {
         let (x_str, y_str) = checked_split_in_two(value, ',')
             .ok_or_else(|| format_parse_error(name, "expected format `x,y`", value))?;
         Ok(Self {
-            x: usize::parse(x_str, &format!("{}.x", name))?,
-            y: usize::parse(y_str, &format!("{}.x", name))?,
+            x: i16::parse(x_str, &format!("{}.x", name))?,
+            y: i16::parse(y_str, &format!("{}.x", name))?,
         })
     }
 }

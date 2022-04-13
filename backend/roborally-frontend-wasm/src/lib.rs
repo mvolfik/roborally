@@ -27,7 +27,7 @@ use roborally_structs::{
     transport::{ClientMessage, ServerMessage},
 };
 
-use js_sys::{Array};
+use js_sys::Array;
 use std::{convert::Into, iter::repeat_with, panic};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -112,6 +112,7 @@ impl ParsedMap {
                     direction: dir.to_continuous(),
                     checkpoint: 0,
                     is_rebooting: false,
+                    is_hidden: false,
                 })
                 .collect(),
             GamePhaseView::HasWinner(0),

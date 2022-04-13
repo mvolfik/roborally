@@ -53,15 +53,15 @@ pub struct AssetMap {
 
 #[wasm_bindgen]
 impl AssetMap {
-    pub fn get(&self, x: usize, y: usize) -> Option<TileAssets> {
+    pub fn get(&self, x: i16, y: i16) -> Option<TileAssets> {
         self.grid.get(Position { x, y }).cloned()
     }
     #[wasm_bindgen(getter)]
-    pub fn width(&self) -> usize {
+    pub fn width(&self) -> i16 {
         self.grid.size().x
     }
     #[wasm_bindgen(getter)]
-    pub fn height(&self) -> usize {
+    pub fn height(&self) -> i16 {
         self.grid.size().y
     }
 }
@@ -78,8 +78,8 @@ impl From<GameMap> for AssetMap {
                 .map(|(i, item)| {
                     (
                         Position {
-                            x: i % size.x,
-                            y: i / size.x,
+                            x: i as i16 % size.x,
+                            y: i as i16 / size.x,
                         },
                         item,
                     )

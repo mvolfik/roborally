@@ -48,6 +48,8 @@ pub struct PlayerPublicState {
     pub direction: ContinuousDirection,
     pub checkpoint: usize,
     pub is_rebooting: bool,
+    /// purely presentational: used during reboot
+    pub is_hidden: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -223,6 +225,16 @@ mod wrapper {
         #[wasm_bindgen(getter)]
         pub fn checkpoint(&self) -> usize {
             self.state.checkpoint
+        }
+
+        #[wasm_bindgen(getter)]
+        pub fn is_rebooting(&self) -> bool {
+            self.state.is_rebooting
+        }
+        
+        #[wasm_bindgen(getter)]
+        pub fn is_hidden(&self) -> bool {
+            self.state.is_hidden
         }
     }
 }

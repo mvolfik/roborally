@@ -29,6 +29,9 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
     /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
     pub type ProcessBulletClosure;
+
+    #[wasm_bindgen(typescript_type = "(player_i: number) => void")]
+    pub type ClosurePlayerI;
 }
 
 #[cfg(feature = "client")]
@@ -69,10 +72,8 @@ impl StateArrayItem {
                         .into(),
                         (*is_from_tank).into(),
                     ];
-                    process_bullet_jsfunc.apply(
-                        &JsValue::UNDEFINED,
-                        &args.into_iter().map(JsValue::from).collect(),
-                    )?;
+                    process_bullet_jsfunc
+                        .apply(&JsValue::UNDEFINED, &args.into_iter().collect())?;
                 }
             };
         }

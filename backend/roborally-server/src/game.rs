@@ -13,7 +13,7 @@ use roborally_structs::{
     game_map::GameMap,
     game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState, RegisterMovePhase},
     logging::{debug, info},
-    position::{Direction, Position},
+    position::{ContinuousDirection, Direction, Position},
     tile::Tile,
     tile_type::TileType,
     transport::{ServerMessage, StateArrayItem},
@@ -46,6 +46,7 @@ impl Player {
                 direction: spawn_point.1.to_continuous(),
                 checkpoint: 0,
                 is_rebooting: false,
+                is_hidden: false,
             },
             draw_pile: Vec::new(),
             hand: Vec::new(),
@@ -249,7 +250,6 @@ impl Game {
 enum QueueUpdateType {
     StateOnly,
     AnimationsOnly(Vec<Animation>),
-    StateWithAnimations(Vec<Animation>),
 }
 
 struct MovingPhaseManager<'a> {
@@ -268,10 +268,6 @@ impl<'a> MovingPhaseManager<'a> {
                 QueueUpdateType::AnimationsOnly(animations) => {
                     StateArrayItem::new(None, animations.clone())
                 }
-                QueueUpdateType::StateWithAnimations(animations) => StateArrayItem::new(
-                    Some(self.game.get_state_for_player(player_i)),
-                    animations.clone(),
-                ),
             });
         }
     }
@@ -377,22 +373,30 @@ impl<'a> MovingPhaseManager<'a> {
         true
     }
 
-    fn process_reboots_queue(&mut self) {
+    fn update_with_reboots(&mut self) {
+        for player_i in &self.reboot_queue {
+            self.game.players[*player_i].public_state.is_hidden = true;
+        }
+        self.queue_update(&QueueUpdateType::StateOnly);
+
         let reboot_token = self.game.map.reboot_token;
         for player_i in mem::take(&mut self.reboot_queue) {
-            // todo animation
             let player = self.game.players.get_mut(player_i).unwrap();
             player.draw_spam();
             player.draw_spam();
-            player.public_state.direction = reboot_token.1.to_continuous();
+            player.public_state.direction = player
+                .public_state
+                .direction
+                .closest_in_given_basic_direction(reboot_token.1);
             player.public_state.is_rebooting = true;
+            player.public_state.is_hidden = false;
 
             // Temporarily move player away, to prevent collisions with players pushed during reboot.
             // This isn't necessary as of now - if the robot is rebooting, it is in a hole, and if a
             // robot pushed away by a reboot ends up in a hole, we're entering a panic anyways.
             // However, this would become needed if the Worm damage card (or other means of reboot)
             // are later introduced
-            player.public_state.position.x = usize::MAX / 2;
+            player.public_state.position.x = i16::MAX;
             self.force_move_to(player_i, reboot_token.0, reboot_token.1);
             self.queue_update(&QueueUpdateType::StateOnly);
         }
@@ -430,8 +434,7 @@ impl<'a> MovingPhaseManager<'a> {
                 };
                 for _ in 0..n {
                     self.mov(player_i, dir);
-                    self.queue_update(&QueueUpdateType::StateOnly);
-                    self.process_reboots_queue();
+                    self.update_with_reboots();
                     if self.game.players[player_i].public_state.is_rebooting {
                         break;
                     }
@@ -511,19 +514,55 @@ impl<'a> MovingPhaseManager<'a> {
                     };
                     for _ in 0..n {
                         // Mapping Position -> Indexes of all players on that tile (can't store players directly due to borrow rules)
-                        let mut moved_positions: HashMap<Position, Vec<usize>> = HashMap::new();
+                        let mut moved_positions: HashMap<
+                            Position,
+                            Vec<(usize, ContinuousDirection)>,
+                        > = HashMap::new();
                         for (player_i, player) in self.game.players.iter_mut().enumerate() {
                             let player_pos = player.public_state.position;
-                            let position = if let Some(Tile {
+                            let player_dir = player.public_state.direction;
+
+                            let (position, direction) = if let Some(Tile {
                                 typ: TileType::Belt(is_fast, dir),
-                                ..
-                            }) = self.game.map.tiles.get(player_pos) && *is_fast == expected_is_fast
+                                walls,
+                            }) = self.game.map.tiles.get(player_pos)
+                            && *is_fast == expected_is_fast
+                            && !walls.get(dir)
+                            // is on belt and can leave current tile
                             {
-                                dir.apply_to(&player_pos)
+                                let new_pos = dir.apply_to(&player_pos);
+                                let new_tile = self.game.map.tiles.get(new_pos);
+                                if new_tile.is_some_and(|t| t.walls.get(&dir.rotated().rotated())) {
+                                    // can't enter target tile (wall)
+                                    (player_pos, player_dir)
+                                } else {
+                                    // actually move, now just need to potentially rotate
+                                    let new_dir = if let Some(Tile {
+                                        typ: TileType::Belt(is_fast2, dir2),
+                                        ..
+                                    }) = new_tile
+                                    && *is_fast2 == expected_is_fast
+                                    {
+                                        if *dir2 == dir.rotated() {
+                                            player_dir.rotated()
+                                        } else if *dir2 == dir.rotated_ccw() {
+                                            player_dir.rotated_ccw()
+                                        } else {
+                                            player_dir
+                                        }
+                                    } else {
+                                        player_dir
+                                    };
+                                    (new_pos, new_dir)
+                                }
                             } else {
-                                player_pos
+                                // not on belt or wall on current tile
+                                (player_pos, player_dir)
                             };
-                            moved_positions.entry(position).or_default().push(player_i);
+                            moved_positions
+                                .entry(position)
+                                .or_default()
+                                .push((player_i, direction));
                         }
                         loop {
                             let mut made_changes = false;
@@ -538,15 +577,14 @@ impl<'a> MovingPhaseManager<'a> {
                                         .is_some_and(|t| t.typ != TileType::Void)
                                 {
                                     made_changes = true;
-                                    for player_i in players {
-                                        // move all players on the conflicted tile to the original position
-                                        // -> those that were attempted to be moved by a belt are reset, the rest stay
+                                    // move all players on the conflicted tile to the original position
+                                    // -> those that were attempted to be moved by a belt are reset, the rest stay
+                                    for (player_i, _) in players {
+                                        let player_state = self.game.players[player_i].public_state;
                                         moved_positions
-                                            .entry(
-                                                self.game.players[player_i].public_state.position,
-                                            )
+                                            .entry(player_state.position)
                                             .or_default()
-                                            .push(player_i);
+                                            .push((player_i, player_state.direction));
                                     }
                                 } else {
                                     // no conflict -> simply copy back
@@ -559,8 +597,10 @@ impl<'a> MovingPhaseManager<'a> {
                         }
                         let mut to_reboot = Vec::new();
                         for (position, players) in moved_positions {
-                            for player_i in &players {
-                                self.game.players[*player_i].public_state.position = position;
+                            for (player_i, direction) in &players {
+                                let player_state = &mut self.game.players[*player_i].public_state;
+                                player_state.position = position;
+                                player_state.direction = *direction;
                             }
                             if !self
                                 .game
@@ -569,16 +609,15 @@ impl<'a> MovingPhaseManager<'a> {
                                 .get(position)
                                 .is_some_and(|t| t.typ != TileType::Void)
                             {
-                                to_reboot.extend(players);
+                                to_reboot.extend(players.into_iter().map(|(i, _)| i));
                             }
                         }
-                        self.queue_update(&QueueUpdateType::StateOnly);
                         to_reboot.sort_by_key(|i| Priority {
                             me: self.game.players[*i].public_state.position,
                             antenna: self.game.map.antenna,
                         });
                         self.reboot_queue.extend(to_reboot);
-                        self.process_reboots_queue();
+                        self.update_with_reboots();
                     }
                     next_phase
                 }
@@ -597,8 +636,7 @@ impl<'a> MovingPhaseManager<'a> {
                             if *active.get(register).unwrap() {
                                 debug!("Moving player {} from a push panel", player_i);
                                 self.mov(player_i, dir);
-                                self.queue_update(&QueueUpdateType::StateOnly);
-                                self.process_reboots_queue();
+                                self.update_with_reboots();
                             }
                         }
                     }
@@ -796,8 +834,8 @@ struct Priority {
 }
 
 impl Priority {
-    const fn dist(&self) -> usize {
-        usize::abs_diff(self.antenna.x, self.me.x) + usize::abs_diff(self.antenna.y, self.me.y)
+    const fn dist(&self) -> u16 {
+        i16::abs_diff(self.antenna.x, self.me.x) + i16::abs_diff(self.antenna.y, self.me.y)
     }
     fn sortable_bearing(&self) -> f64 {
         let mut x = f64::atan2(

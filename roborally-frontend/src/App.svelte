@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { readable } from "svelte/store";
   import Dialog from "./lib/Dialog.svelte";
 
   import Game from "./lib/Game.svelte";
@@ -92,7 +91,7 @@
     return () => clearInterval(interval);
   });
 
-  const fetchMapWithErrorHandler = (mapName) =>
+  const fetchMapWithErrorHandler = (mapName: string) =>
     fetchMap(mapName).catch((e) => {
       alert(`Error loading map preview: ${e}. Please try again`);
       previewedMap = undefined;

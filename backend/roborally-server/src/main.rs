@@ -212,14 +212,6 @@ struct GetMapQuery {
     name: String,
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn handle_get_map(query: GetMapQuery, maps: Maps) -> Box<dyn Reply> {
-    maps.get(&query.name).map_or_else::<Box<dyn Reply>, _, _>(
-        || Box::new(with_status("Unknown map", StatusCode::NOT_FOUND)),
-        |map| Box::new(rmp_serde::to_vec(map).unwrap()),
-    )
-}
-
 #[tokio::main]
 async fn main() {
     logging::init();
@@ -241,7 +233,6 @@ async fn main() {
 
     let create_maps_state = || {
         let arc = Arc::clone(&maps);
-
         warp::any().map(move || Arc::clone(&arc))
     };
 
@@ -256,13 +247,22 @@ async fn main() {
         .and(warp::path("list-maps").and(warp::path::end()))
         .and(warp::get())
         .and(create_maps_state())
-        .map(|maps: Maps| warp::reply::json(&maps.keys().collect::<Vec<_>>()));
+        .map(|maps: Maps| {
+            let mut maps = maps.keys().collect::<Vec<_>>();
+            maps.sort();
+            warp::reply::json(&maps)
+        });
     let get_map = api
         .and(warp::path("map").and(warp::path::end()))
         .and(warp::query::<GetMapQuery>())
         .and(warp::get())
         .and(create_maps_state())
-        .map(handle_get_map);
+        .map(|query: GetMapQuery, maps: Maps| {
+            maps.get(&query.name).map_or_else::<Box<dyn Reply>, _, _>(
+                || Box::new(with_status("Unknown map", StatusCode::NOT_FOUND)),
+                |map| Box::new(rmp_serde::to_vec(map).unwrap()),
+            )
+        });
     let new_game = api
         .and(warp::path("new-game").and(warp::path::end()))
         .and(warp::post())

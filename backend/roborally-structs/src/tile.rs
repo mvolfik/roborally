@@ -53,17 +53,17 @@ pub struct Grid<T> {
 
 impl<T> Grid<T> {
     pub fn get(&self, pos: Position) -> Option<&T> {
-        if pos.x >= self.size.x || pos.y >= self.size.y {
+        if 0 > pos.x || pos.x >= self.size.x || 0 > pos.y || pos.y >= self.size.y {
             return None;
         }
-        self.vec.get(pos.y * self.size.x + pos.x)
+        self.vec.get((pos.y * self.size.x + pos.x) as usize)
     }
 
     pub fn get_mut(&mut self, pos: Position) -> Option<&mut T> {
-        if pos.x >= self.size.x || pos.y >= self.size.y {
+        if 0 > pos.x || pos.x >= self.size.x || 0 > pos.y || pos.y >= self.size.y {
             return None;
         }
-        self.vec.get_mut(pos.y * self.size.x + pos.x)
+        self.vec.get_mut((pos.y * self.size.x + pos.x) as usize)
     }
 
     pub fn size(&self) -> Position {
@@ -75,7 +75,7 @@ impl<T> Grid<T> {
     }
 
     pub fn new(vec: Vec<T>, size: Position) -> Result<Self, String> {
-        if size.x * size.y == vec.len() {
+        if (size.x * size.y) as usize == vec.len() {
             Ok(Self { vec, size })
         } else {
             Err("Supplied position doesn't match vector size".to_owned())

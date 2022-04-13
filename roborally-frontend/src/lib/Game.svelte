@@ -65,7 +65,7 @@
 
     currentAnimationDuration = automaticPlaybackDelay;
     const item = stateArray[++stateIndicator];
-    item.process_animations(mapComponent?.handleBullet ?? (() => {}));
+    item.process_animations(mapComponent.handleBullet);
 
     if (item.has_state) {
       state = item.state;
@@ -101,7 +101,12 @@
       }/websocket/game?name=${encodeURIComponent(game_name)}`
     );
     connection.binaryType = "arraybuffer";
-    connection.onclose = () => {
+    connection.onclose = (e) => {
+      if (e.code === 1000) {
+        alert(`Server closed connection: ${e.reason}`);
+      } else {
+        alert(`Server abruptly closed connection`);
+      }
       disconnect();
     };
     connection.addEventListener("message", messageHandler);
@@ -305,6 +310,12 @@
               )}
               alt="Card"
             />
+            <div>
+              Rebooting: <div
+                class="indicator"
+                class:true={player.is_rebooting}
+              />
+            </div>
           {:else if phase !== GamePhase.HasWinner}
             <div>
               Ready: <div
