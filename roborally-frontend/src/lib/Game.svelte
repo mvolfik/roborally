@@ -2,7 +2,6 @@
   import {
     AssetMap,
     CardWrapper,
-    create_init_message,
     create_program_cards_message,
     GamePhase,
     parse_message,
@@ -27,16 +26,24 @@
   let map: AssetMap;
   let mapComponent: Map;
 
+  /** If playing a sequence of state updates in the moving phase, they are all stored here */
   let stateArray: Array<StateArrayItem> = [];
+  /** If no sequence is playing, simply the current state. Otherwise, the game
+   * should continue to this state after the sequence finishes */
   let currentSimpleState: PlayerGameStateView;
   /**
    * number => index in stateArray
    * undefined => currentSimpleState
    */
   let stateIndicator: number | undefined;
+
+  /** The actual current state, as selected by `stateIndicator` */
   let state: PlayerGameStateView;
+
   let autoplay = true;
   let automaticPlaybackDelay = 700;
+  /** This is only updated each time the animation "steps", to prevent changing
+   * the duration in the middle of a running animation */
   let currentAnimationDuration = automaticPlaybackDelay;
 
   function handleProgrammingDone(
@@ -49,6 +56,12 @@
 
   let timeoutHandle: number | undefined;
 
+  /** Move a step forward in the stateArray
+   *
+   * This function also clears any timeout in case it was called from manual
+   * button click to prevent two updates in quick succession.
+   * If autoplay is on, a timeout is started to schedule the next update
+   */
   function step() {
     clearTimeout(timeoutHandle);
     timeoutHandle = undefined;
@@ -76,7 +89,7 @@
     }
   }
 
-  function messageHandler(e: MessageEvent) {
+  function handleMessage(e: MessageEvent) {
     let msg = parse_message(new Uint8Array(e.data));
     if (typeof msg === "string") {
       alert(msg);
@@ -84,6 +97,7 @@
       stateArray = msg;
       stateIndicator = 0;
       state = stateArray[0].state;
+      // start the timer if autoplay is on
       onAutoplayChange(autoplay);
     } else {
       currentSimpleState = msg;
@@ -98,38 +112,39 @@
     connection = new WebSocket(
       `${window.location.protocol.replace("http", "ws")}//${
         window.location.host
-      }/websocket/game?name=${encodeURIComponent(game_name)}`
+      }/websocket/game?${new URLSearchParams({
+        game_name,
+        name,
+        seat: seat.toString(),
+      }).toString()}`
     );
     connection.binaryType = "arraybuffer";
     connection.onclose = (e) => {
       if (e.code === 1000) {
         alert(`Server closed connection: ${e.reason}`);
       } else {
-        alert(`Server abruptly closed connection`);
+        if (disconnect !== undefined)
+          alert(`Server abruptly closed connection`);
       }
-      disconnect();
+      disconnect?.();
     };
-    connection.addEventListener("message", messageHandler);
-    connection.addEventListener(
-      "open",
-      () => connection.send(create_init_message(name, seat).buffer),
-      { once: true }
-    );
+    connection.addEventListener("message", handleMessage);
 
     return () => {
       connection.close();
-      connection.removeEventListener("message", messageHandler);
+      connection.removeEventListener("message", handleMessage);
     };
   });
 
   let eventSource = createEventDispatcher();
   let disconnect = () => {
     eventSource("disconnect");
-    disconnect = () => {};
+    // prevent repeated disconnect event
+    // (that can happen when client initiates disconnect and later a close frame comes from server to fully close the socket)
+    disconnect = undefined;
   };
-  /**
-   * This value is later updated by the reactive block below
-   */
+
+  // updated by the reactive block below
   let phase: GamePhase;
 
   let programmerExpandedStore = writable(true);
@@ -150,7 +165,6 @@
       phase = newPhase;
     }
   }
-  $: console.log({ state, stateArray, stateIndicator });
 
   function onAutoplayChange(newAutoplay: boolean) {
     if (newAutoplay) {
@@ -280,14 +294,14 @@
       expandedStore={playersInfoExpandedStore}
       key={phase === GamePhase.Moving}
     >
-      {#each [...Array(state.players)].map( (_, i) => state.get_player(i) ) as player, player_i}
+      {#each state.players as player, player_i}
         {@const name = player.name}
         <div class="player-infobox" style:--player-i={player_i}>
           {#if player_i === seat}
             <div class="name self">
               You ({name})
             </div>
-            <button on:click={() => disconnect()}>Disconnect</button>
+            <button on:click={() => disconnect?.()}>Disconnect</button>
           {:else if name === undefined}
             <div class="name disconnected">
               Seat {player_i + 1} (disconnected)
@@ -338,9 +352,7 @@
       >
         {#if phase === GamePhase.Programming}
           <Programmer
-            initialCards={[...Array(state.hand_len)].map((_, i) =>
-              state.get_hand_card(i)
-            )}
+            initialCards={state.hand}
             on:programmingDone={handleProgrammingDone}
           />
         {:else}
@@ -357,10 +369,14 @@
     <!-- Left panel: rule hints -->
     <Collapsible side="left" label="Rule hints">
       <div style:max-width="min(20rem, 80vw)" style:padding="1rem">
-        <p>Oh, hi there!</p>
+        <p>Oh, hey there!</p>
         <p>
-          Hopefully, one day, in this panel you will find various hints for move
-          execution order, tile effects etc
+          One day, I hope to add here various hints for game rules relevant for
+          current game view and state. As you can see, I haven't done it yet, so
+          in the meantime, you can look into the <a
+            href="https://www.hasbro.com/common/documents/60D52426B94D40B98A9E78EE4DD8BF94/3EA9626BCAE94683B6184BD7EA3F1779.pdf"
+            >original rules PDF</a
+          >
         </p>
       </div>
     </Collapsible>

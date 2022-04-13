@@ -10,6 +10,7 @@ use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
 #[derive(Debug, Clone)]
+/// Item in array of states played as an animated sequence during Moving phase
 pub struct StateArrayItem {
     state: Option<PlayerGameStateView>,
     animations: Vec<Animation>,
@@ -93,6 +94,5 @@ pub enum ServerMessage {
 #[cfg_attr(feature = "server", derive(Deserialize, Debug))]
 #[cfg_attr(feature = "client", derive(Serialize))]
 pub enum ClientMessage {
-    Init { name: String, seat: usize },
     Program([Card; 5]),
 }

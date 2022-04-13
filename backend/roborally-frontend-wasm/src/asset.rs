@@ -1,4 +1,5 @@
 use roborally_structs::{
+    create_array_type,
     game_map::GameMap,
     position::{Direction, Position},
     tile::{DirectionBools, Grid, Tile},
@@ -6,8 +7,6 @@ use roborally_structs::{
     transform::Effects,
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
-
-use crate::create_array_type;
 
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -39,7 +38,7 @@ pub struct TileAssets(Vec<Asset>);
 #[wasm_bindgen]
 impl TileAssets {
     pub fn into_jsarray(self) -> AssetArray {
-        self.0.into()
+        AssetArray::from_iter(self.0.iter().cloned())
     }
 }
 
@@ -94,19 +93,19 @@ impl From<GameMap> for AssetMap {
                                 only_show_sides: Some(DirectionBools {
                                     up: m
                                         .tiles
-                                        .get(Direction::Up.apply_to(&pos))
+                                        .get(pos.moved_in_direction(Direction::Up))
                                         .map_or(false, |t2| t2.typ != TileType::Void),
                                     right: m
                                         .tiles
-                                        .get(Direction::Right.apply_to(&pos))
+                                        .get(pos.moved_in_direction(Direction::Right))
                                         .map_or(false, |t2| t2.typ != TileType::Void),
                                     down: m
                                         .tiles
-                                        .get(Direction::Down.apply_to(&pos))
+                                        .get(pos.moved_in_direction(Direction::Down))
                                         .map_or(false, |t2| t2.typ != TileType::Void),
                                     left: m
                                         .tiles
-                                        .get(Direction::Left.apply_to(&pos))
+                                        .get(pos.moved_in_direction(Direction::Left))
                                         .map_or(false, |t2| t2.typ != TileType::Void),
                                 }),
                                 ..Effects::random_rotate_flip()
@@ -129,7 +128,7 @@ impl From<GameMap> for AssetMap {
                                 if let Some(Tile {
                                         typ: Belt(is_fast2, dir2),
                                         ..
-                                    }) = m.tiles.get(possibly_incoming_belt_direction.apply_to(&pos))
+                                    }) = m.tiles.get(pos.moved_in_direction(possibly_incoming_belt_direction))
                                     && *is_fast2 == is_fast
                                     && *dir2 == possibly_incoming_belt_direction.rotated().rotated()
                                 {

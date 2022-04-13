@@ -31,7 +31,18 @@
       } = {
     state: "disconnected",
   };
+
+  /** Promise which should resolve to the list of games
+   *
+   * When this promise isn't resolved yet, a loading state is showed.
+   * Therefore, this should be updated in 2 ways:
+   * - if user expects an explicit refresh (after map creation or on refresh button click)
+   *   - in that case, set this to a promise immediately
+   * - silently, in background (periodic refresh)
+   *   - create a separate promise, wait for it to resolve, and then set this value to immediately resolved `Promise.resolve(...)`
+   */
   let games_promise = refresh_game_list();
+  let previewedMap = undefined;
 
   async function refresh_game_list(): Promise<
     {
@@ -77,8 +88,6 @@
     }
   }
 
-  let previewedMap = undefined;
-
   onMount(() => {
     const interval = setInterval(() => {
       if (state.state !== "inGame") {
@@ -108,7 +117,7 @@
     on:disconnect={() => {
       state = { state: "disconnected" };
       games_promise = refresh_game_list();
-      // refresh again soon after, the seat this player just left should be empty
+      // refresh again soon after, the seat this player just left should be empty then
       setTimeout(
         () =>
           refresh_game_list().then(
@@ -186,6 +195,79 @@
         {/await}
       </tbody>
     </table>
+    <div class="intro-info">
+      <p>
+        This is a remake of the board game Roborally, originally published by
+        <a href="https://wizards.com">Wizards of the Coast</a>, a game studio
+        now owned by Hasbro. This web version was created in March &ndash; April
+        2022 as a high-school graduation project by Matěj Volf. For more
+        information:
+      </p>
+      <ul>
+        <li>
+          <a href="https://en.wikipedia.org/wiki/RoboRally"
+            >Read more about the game on Wikipedia</a
+          >
+        </li>
+        <li>
+          <a
+            href="https://www.hasbro.com/common/documents/60D52426B94D40B98A9E78EE4DD8BF94/3EA9626BCAE94683B6184BD7EA3F1779.pdf"
+            >Download original rules PDF from Hasbro website</a
+          >
+        </li>
+        <li>
+          Download the source code (<a href="/source-code.tar.gz">.tar.gz</a>,
+          <a href="/source-code.zip">.zip</a>) and read the technical
+          description in <code>README.md</code>
+        </li>
+      </ul>
+      <p>This game differs from the original rules in the following:</p>
+      <ul>
+        <li>
+          There's no energy cubes and powerups (powerups break many assumptions
+          about movement rules and checks for installed player powerups would
+          need to be all over the code-base
+        </li>
+        <li>
+          There's only 1 reboot token for the whole map
+          <ul>
+            <li>
+              It wouldn't be that difficult to implement multiple reboot tokens,
+              with each of them having a covered area. However, there's no
+              notion of "one game map is made of multiple boards" in the web
+              version, so the reboot tokens would need some other way of showing
+              these areas
+            </li>
+          </ul>
+        </li>
+        <li>
+          To simplify the game simulation and network code, players can't make
+          choices outside of programming their robots. This constraint means the
+          following:
+          <ul>
+            <li>Spawn points are assigned randomly during game creation.</li>
+            <li>
+              There's only 1 type of damage cards (SPAM cards). However, there's
+              unlimited amount of them.
+            </li>
+            <li>
+              Players can't choose which way to turn their robot after reboot.
+              Instead, the robots automatically face in the direction of the
+              reboot token.
+            </li>
+          </ul>
+        </li>
+        <li>
+          While programming a board game usually requires handling many more
+          edge-cases that the original rules didn't think of, there's one weird
+          situation that the Roborally rules specify, but I decided to implement
+          in a different way: if you program "Again" after a SPAM card,
+          according to original rules, you should <i>again</i> draw a random card
+          and execute it. In my implementation, the SPAM card is replaced in the
+          register that it was programmed in, and again just re-executes that action
+        </li>
+      </ul>
+    </div>
   </div>
 {/if}
 
@@ -356,5 +438,10 @@
   .map-preview {
     width: calc(95vw - 4rem);
     height: calc(95vh - 5rem);
+  }
+
+  .intro-info {
+    max-width: 60rem;
+    margin-top: 5rem;
   }
 </style>

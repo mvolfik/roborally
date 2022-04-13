@@ -5,7 +5,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "client")]
-use crate::card::wrapper::CardWrapper;
+use crate::{
+    card::wrapper::{CardWrapper, CardWrapperArray},
+    game_state::wrapper::{PlayerPublicStateWrapper, PlayerPublicStateWrapperArray},
+};
 
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -43,6 +46,7 @@ pub enum GamePhaseView {
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
+/// Public state of 1 player
 pub struct PlayerPublicState {
     pub position: Position,
     pub direction: ContinuousDirection,
@@ -55,6 +59,7 @@ pub struct PlayerPublicState {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
+/// Player's view of the game - doesn't inlude other players' cards etc.
 pub struct PlayerGameStateView {
     player_states: Vec<PlayerPublicState>,
     phase: GamePhaseView,
@@ -92,11 +97,8 @@ pub enum GamePhase {
 #[wasm_bindgen]
 impl PlayerGameStateView {
     #[wasm_bindgen(getter)]
-    pub fn hand_len(&self) -> usize {
-        self.hand.len()
-    }
-    pub fn get_hand_card(&self, i: usize) -> Option<CardWrapper> {
-        Some(CardWrapper(*self.hand.get(i)?))
+    pub fn hand(&self) -> CardWrapperArray {
+        CardWrapperArray::from_iter(self.hand.iter().map(|c| CardWrapper(*c)))
     }
     #[wasm_bindgen(getter)]
     pub fn phase(&self) -> GamePhase {
@@ -140,19 +142,18 @@ impl PlayerGameStateView {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn players(&self) -> usize {
-        self.player_states.len()
-    }
-    pub fn get_player(&self, i: usize) -> Option<wrapper::PlayerPublicStateWrapper> {
-        if let (Some(name), Some(player)) = (self.player_names.get(i), self.player_states.get(i)) {
-            Some(wrapper::PlayerPublicStateWrapper {
-                state: *player,
-                name: name.clone(),
-                seat: i,
-            })
-        } else {
-            None
-        }
+    pub fn players(&self) -> PlayerPublicStateWrapperArray {
+        PlayerPublicStateWrapperArray::from_iter(
+            self.player_states
+                .iter()
+                .zip(self.player_names.iter())
+                .enumerate()
+                .map(|(i, (state, name))| PlayerPublicStateWrapper {
+                    state: *state,
+                    name: name.clone(),
+                    seat: i,
+                }),
+        )
     }
 
     pub fn is_ready_programming(&self, i: usize) -> Option<bool> {
@@ -187,7 +188,7 @@ impl PlayerGameStateView {
 mod wrapper {
     use wasm_bindgen::prelude::wasm_bindgen;
 
-    use crate::{position::Position, transform::Effects};
+    use crate::{create_array_type, position::Position, transform::Effects};
 
     use super::PlayerPublicState;
 
@@ -197,6 +198,8 @@ mod wrapper {
         pub(super) name: Option<String>,
         pub(super) seat: usize,
     }
+
+    create_array_type!( name: PlayerPublicStateWrapperArray, full_js_type: "Array<PlayerPublicStateWrapper>", rust_inner_type: PlayerPublicStateWrapper);
 
     #[wasm_bindgen]
     impl PlayerPublicStateWrapper {

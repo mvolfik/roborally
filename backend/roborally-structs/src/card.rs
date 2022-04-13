@@ -16,6 +16,8 @@ pub enum Card {
 /// wasm_bindgen doesn't support methods on enum, so it needs to be wrapped
 #[cfg(feature = "client")]
 pub mod wrapper {
+    use crate::create_array_type;
+
     use super::Card;
     use std::ops::Deref;
     use wasm_bindgen::{intern, prelude::wasm_bindgen};
@@ -51,4 +53,6 @@ pub mod wrapper {
             &self.0
         }
     }
+
+    create_array_type!( name: CardWrapperArray, full_js_type: "Array<CardWrapper>", rust_inner_type: CardWrapper);
 }

@@ -232,6 +232,7 @@ impl Parse for Tile {
     }
 }
 
+/// Utility function to reduce repetition when extracting props from map header
 fn get_parsed_prop<T: Parse>(
     props: &mut HashMap<&str, &str>,
     basename: &str,

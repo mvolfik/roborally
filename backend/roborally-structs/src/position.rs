@@ -18,6 +18,18 @@ impl Position {
     pub const fn contains(self, other: Self) -> bool {
         0 <= other.x && other.x < self.x && 0 <= other.y && other.y < self.y
     }
+
+    #[inline]
+    /// Returns a new position moved by one tile in given direction
+    pub fn moved_in_direction(&self, dir: Direction) -> Self {
+        let Position { x, y } = self;
+        match dir {
+            Direction::Up => Position { x: *x, y: y - 1 },
+            Direction::Right => Position { x: x + 1, y: *y },
+            Direction::Down => Position { x: *x, y: y + 1 },
+            Direction::Left => Position { x: x - 1, y: *y },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -62,27 +74,15 @@ impl Direction {
             Right => Up,
         }
     }
-
-    // Return position 1 tile to <Self>
-    pub fn apply_to(&self, Position { x, y }: &Position) -> Position {
-        match self {
-            Direction::Up => Position {
-                x: *x,
-                y: y.wrapping_sub(1),
-            },
-            Direction::Right => Position { x: x + 1, y: *y },
-            Direction::Down => Position { x: *x, y: y + 1 },
-            Direction::Left => Position {
-                x: x.wrapping_sub(1),
-                y: *y,
-            },
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
+/// A direction that can continuously rotate by more that 270 degrees in one direction
+///
+/// While rotation by 360 degrees equals no rotation, CSS used to rotate robots weirdly
+/// jump when you transition between 270 and 0, so this continuous direction is kept
 pub struct ContinuousDirection(i64);
 
 impl ContinuousDirection {
@@ -118,6 +118,7 @@ impl ContinuousDirection {
         Self(self.0 - 1)
     }
 
+    /// Returns closest [`ContinuousDirection`] that aims in the given simple [`Direction`]
     pub fn closest_in_given_basic_direction(&self, target: Direction) -> Self {
         let basic_self = self.to_basic();
         if basic_self == target {

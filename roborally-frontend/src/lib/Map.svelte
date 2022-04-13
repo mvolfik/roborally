@@ -5,11 +5,11 @@
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
-  export let hovered = undefined;
-  export let state: Pick<PlayerGameStateView, "players" | "get_player">;
+  export let state: Pick<PlayerGameStateView, "players">;
 
   let innerDiv: HTMLDivElement;
 
+  /** Run a bullet animation */
   export function handleBullet(
     from: Position,
     to: Position,
@@ -64,23 +64,11 @@
 <div class="outer">
   <Zoomable maxScale={2}>
     <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-    <div
-      class="grid"
-      on:mouseleave={() => (hovered = undefined)}
-      bind:this={innerDiv}
-    >
+    <div class="grid" bind:this={innerDiv}>
       {#each Array(map.height) as _, y}
         {#each Array(map.width) as _, x}
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-          <div
-            class="tile"
-            style:grid-column={x + 1}
-            style:grid-row={y + 1}
-            on:mouseover={(e) => {
-              if (e.buttons) return;
-              hovered = { x, y };
-            }}
-          >
+          <div class="tile" style:grid-column={x + 1} style:grid-row={y + 1}>
             {#each map.get(x, y).into_jsarray() as asset}
               {@const assetUri = getTexture(asset.uri)}
               {#if assetUri !== undefined}
@@ -90,7 +78,7 @@
           </div>
         {/each}
       {/each}
-      {#each [...Array(state.players)].map( (_, player_i) => state.get_player(player_i) ) as player}
+      {#each state.players as player}
         {@const pos = player.position}
         <div
           class="robot"

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use futures::{stream::SplitSink, SinkExt, Stream, StreamExt};
 use roborally_structs::{
-    logging::{debug, error, info, warn},
+    logging::{error, info, warn},
     transport::{ClientMessage, ServerMessage},
 };
 use tokio::{sync::RwLock, time::timeout};
@@ -38,10 +38,19 @@ pub struct PlayerConnection {
     pub socket: RwLock<SocketWriter>,
 }
 
+/// Attempts to receive a message
+///
+/// If `Err(Some(String))` is returned, the associated writer should be closed with that message.
+///
+/// If `Err(None)` is returned, the writer is already closed.
+///
+/// In either `Err` case, this function shouldn't be called again for the same reader
 async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> + Send + Unpin>(
     reader: &mut S,
 ) -> Result<ClientMessage, Option<String>> {
+    // this function would be cleaner using recursion, but with async function that requires boxing and can cause lifetime checker issues
     loop {
+        // even if the player doesn't make any action for 20 seconds, at least a `pong` should be received
         let ws_msg = match timeout(Duration::from_secs(20), reader.next()).await {
             Ok(Some(Ok(x))) => x,
             // various network errors
@@ -56,7 +65,6 @@ async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> +
             }
         };
         return {
-            // this would be cleaner as recursion, but that is messy with async function
             if ws_msg.is_close() {
                 Err(None)
             } else if ws_msg.is_ping() || ws_msg.is_pong() {
@@ -75,7 +83,17 @@ async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> +
 }
 
 impl PlayerConnection {
-    pub async fn create_and_start(game_opt: Option<Arc<RwLock<Game>>>, socket: WebSocket) {
+    /// Creates a player connections and starts receive loop
+    ///
+    /// The connection isn't returned - it lives in an `Arc` (reference-counted pointer), which is dropped when the receive loop ends
+    ///
+    /// Weak references to the `Arc` are stored in the game object, and in a ping keepalive loop
+    pub async fn create_and_start(
+        game_opt: Option<Arc<RwLock<Game>>>,
+        socket: WebSocket,
+        player_name: String,
+        seat: usize,
+    ) {
         let (w, mut reader) = socket.split();
         let mut writer = SocketWriter(w);
         let Some(game_lock) = game_opt
@@ -84,21 +102,6 @@ impl PlayerConnection {
             return;
         };
 
-        let (player_name, seat) = match receive_client_message(&mut reader).await {
-            Err(err_opt) => {
-                if let Some(e) = err_opt {
-                    writer.close_with_notice(e).await;
-                }
-                return;
-            }
-            Ok(ClientMessage::Init { name, seat }) => (name, seat),
-            Ok(_other) => {
-                writer
-                    .close_with_notice("Unexpected message type (server/client desync)".to_owned())
-                    .await;
-                return;
-            }
-        };
         let self_arc = {
             let mut game = game_lock.write().await;
             if let GamePhase::HasWinner(..) = game.phase {
@@ -129,7 +132,7 @@ impl PlayerConnection {
                 socket: RwLock::new(writer),
             });
             player.connected = Arc::downgrade(&conn);
-            game.send_single_update().await;
+            game.send_single_state().await;
             conn
         };
         let self_weak = Arc::downgrade(&self_arc);
@@ -152,7 +155,6 @@ impl PlayerConnection {
                 drop(ping_conn);
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
-            debug!("Ending ping loop");
         });
 
         // reader loop
@@ -183,23 +185,12 @@ impl PlayerConnection {
                                 .await;
                         }
                     }
-                    _other => {
-                        self_arc
-                            .socket
-                            .write()
-                            .await
-                            .close_with_notice(
-                                "Unexpected message type (server/client desync)".to_owned(),
-                            )
-                            .await;
-                        break;
-                    }
                 }
             }
             info!("Ending receive loop for player {}", self_arc.player_name);
             let game = Arc::clone(&self_arc.game);
             drop(self_arc);
-            game.write().await.send_single_update().await;
+            game.write().await.send_single_state().await;
         });
     }
 }

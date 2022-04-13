@@ -12,7 +12,7 @@ use roborally_structs::{
     card::Card,
     game_map::GameMap,
     game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState, RegisterMovePhase},
-    logging::{debug, info},
+    logging::info,
     position::{ContinuousDirection, Direction, Position},
     tile::Tile,
     tile_type::TileType,
@@ -39,7 +39,7 @@ const START_CARDS: [Card; 20] = {
 };
 
 impl Player {
-    pub fn init(spawn_point: &(Position, Direction)) -> Self {
+    pub fn init(spawn_point: (Position, Direction)) -> Self {
         let mut p = Self {
             public_state: PlayerPublicState {
                 position: spawn_point.0,
@@ -53,11 +53,11 @@ impl Player {
             discard_pile: START_CARDS.into(),
             connected: Weak::new(),
         };
-        p.hand = p.draw_n(9);
+        p.hand = p.draw_n_cards(9);
         p
     }
 
-    pub fn draw_one(&mut self) -> Card {
+    pub fn draw_one_card(&mut self) -> Card {
         if let Some(c) = self.draw_pile.pop() {
             c
         } else {
@@ -67,7 +67,7 @@ impl Player {
         }
     }
 
-    pub fn draw_n(&mut self, n: usize) -> Vec<Card> {
+    pub fn draw_n_cards(&mut self, n: usize) -> Vec<Card> {
         if self.draw_pile.len() >= n {
             self.draw_pile.split_off(self.draw_pile.len() - n)
         } else {
@@ -106,7 +106,7 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn get_state_for_player(&mut self, seat: usize) -> PlayerGameStateView {
+    fn get_state_for_player(&mut self, seat: usize) -> PlayerGameStateView {
         let this_player_state = self.players.get(seat).unwrap();
         let phase: GamePhaseView = match &self.phase {
             GamePhase::Moving {
@@ -145,7 +145,10 @@ impl Game {
         }
         let mut spawn_points = map.spawn_points.clone();
         let (shuffled_spawn_points, _) = spawn_points.partial_shuffle(&mut thread_rng(), players_n);
-        let players: Vec<Player> = shuffled_spawn_points.iter().map(Player::init).collect();
+        let players: Vec<Player> = shuffled_spawn_points
+            .iter()
+            .map(|sp| Player::init(*sp))
+            .collect();
         Ok(Self {
             map,
             players,
@@ -153,7 +156,7 @@ impl Game {
         })
     }
 
-    pub async fn send_single_update(&mut self) {
+    pub async fn send_single_state(&mut self) {
         // we need a separate map and collect to satisfy `self` borrow rules
         #[allow(clippy::needless_collect)]
         let connections: Vec<_> = self
@@ -176,6 +179,10 @@ impl Game {
         join_all(futures).await;
     }
 
+    /// Handle when a player submits their programmed registers for given round
+    ///
+    /// After storing the programmed cards, this method checks if all players have programmed their registers now.
+    /// If so, moving phase is executed and state array sent to each player
     pub async fn program(&mut self, seat: usize, cards: [Card; 5]) -> Result<(), String> {
         let player = self.players.get_mut(seat).unwrap();
         let my_programmed_ref = match &mut self.phase {
@@ -207,7 +214,7 @@ impl Game {
             i += 1;
             res
         });
-        self.send_single_update().await;
+        self.send_single_state().await;
 
         if let GamePhase::Programming(vec) = &self.phase {
             if vec.iter().all(std::option::Option::is_some) {
@@ -243,15 +250,17 @@ impl Game {
             },
         );
         join_all(futures).await;
-        self.send_single_update().await;
+        self.send_single_state().await;
     }
 }
 
+/// A combined update type which includes state + animations may be needed in the future
 enum QueueUpdateType {
     StateOnly,
     AnimationsOnly(Vec<Animation>),
 }
 
+/// A wrapper around Game with additional storage for temporary state that needs to be stored during the Moving phase
 struct MovingPhaseManager<'a> {
     game: &'a mut Game,
     states: Vec<Vec<StateArrayItem>>,
@@ -281,8 +290,8 @@ impl<'a> MovingPhaseManager<'a> {
     /// edge-case.
     ///
     /// It is also possible that the "pushing train" of robots becomes so long, that the first one of them would fall
-    /// into a void again. In that case, this method panics, poisoning the whole game.
-    /// (TODO: find out what happens after that)
+    /// into a void again. In that case, this method panics, poisoning the whole game lock. That disconnects all players
+    /// and makes the game impossible to connect to, cleaning it up as soon as all [`Arc`]s are dropped
     fn force_move_to(&mut self, player_i: usize, pos: Position, pushing_direction: Direction) {
         if !self
             .game
@@ -304,7 +313,7 @@ impl<'a> MovingPhaseManager<'a> {
         for player2_i in need_move {
             self.force_move_to(
                 player2_i,
-                pushing_direction.apply_to(&pos),
+                pos.moved_in_direction(pushing_direction),
                 pushing_direction,
             );
         }
@@ -316,7 +325,13 @@ impl<'a> MovingPhaseManager<'a> {
             .position = pos;
     }
 
-    /// return value: if succeeded to free the tile
+    /// Move a player in given direction, pushing players in the way if needed
+    ///
+    /// This checks for walls on source/target tile, and queues a reboot if the player should fall into a void
+    ///
+    /// Return value: if succeeded to free the tile
+    ///
+    /// (this method isn't named `move` since it's a Rust keyword)
     fn mov(&mut self, player_i: usize, direction: Direction) -> bool {
         let player = self.game.players.get_mut(player_i).unwrap();
         let origin_pos = player.public_state.position;
@@ -331,10 +346,9 @@ impl<'a> MovingPhaseManager<'a> {
             return true;
         }
         if origin_tile.walls.get(&direction) {
-            // todo: failed move animation
             return false;
         }
-        let target_pos = direction.apply_to(&origin_pos);
+        let target_pos = origin_pos.moved_in_direction(direction);
         let Some(target_tile) = self.game.map.tiles.get(target_pos)
         else {
             player.public_state.position = target_pos;
@@ -342,7 +356,6 @@ impl<'a> MovingPhaseManager<'a> {
             return true;
         };
         if target_tile.walls.get(&direction.rotated().rotated()) {
-            // todo: failed move animation
             return false;
         }
         if target_tile.typ == TileType::Void {
@@ -365,7 +378,6 @@ impl<'a> MovingPhaseManager<'a> {
         );
         if let Some(player2_i) = players_in_way.first() {
             if !self.mov(*player2_i, direction) {
-                // todo: failed move animation
                 return false;
             }
         }
@@ -373,7 +385,10 @@ impl<'a> MovingPhaseManager<'a> {
         true
     }
 
-    fn update_with_reboots(&mut self) {
+    /// Hide all players that should reboot, queue a state update, then move them one by one to the reboot token
+    ///
+    /// This should typically be called directly after a move, without any intermediate state updates
+    fn execute_reboots(&mut self) {
         for player_i in &self.reboot_queue {
             self.game.players[*player_i].public_state.is_hidden = true;
         }
@@ -402,6 +417,11 @@ impl<'a> MovingPhaseManager<'a> {
         }
     }
 
+    /// Execute player's card in given register
+    ///
+    /// If it's a SPAM/Again, this recurses appropriately
+    ///
+    /// All reboots are executed and state updates sent
     fn execute_card(&mut self, player_i: usize, register_i: usize) {
         use Card::*;
 
@@ -412,11 +432,10 @@ impl<'a> MovingPhaseManager<'a> {
 
         let card = &mut cards[player_i][register_i];
         let player = &mut self.game.players[player_i];
-        debug!("Executing {:?} for {}", &card, player_i);
 
         match card {
             SPAM => {
-                *card = player.draw_one();
+                *card = player.draw_one_card();
                 // to show the replaced card
                 self.queue_update(&QueueUpdateType::StateOnly);
                 self.execute_card(player_i, register_i);
@@ -434,7 +453,7 @@ impl<'a> MovingPhaseManager<'a> {
                 };
                 for _ in 0..n {
                     self.mov(player_i, dir);
-                    self.update_with_reboots();
+                    self.execute_reboots();
                     if self.game.players[player_i].public_state.is_rebooting {
                         break;
                     }
@@ -454,7 +473,7 @@ impl<'a> MovingPhaseManager<'a> {
             }
             Again => {
                 if register_i == 0 {
-                    let replacement_card = player.draw_one();
+                    let replacement_card = player.draw_one_card();
                     player
                         .discard_pile
                         .push(mem::replace(card, replacement_card));
@@ -474,6 +493,8 @@ impl<'a> MovingPhaseManager<'a> {
     /// Panics if programming phase isn't active or some player doesn't have all cards programmed
     ///
     /// After this method returns, `game.phase` is set back to `Programming` (or eventualy `HasWinner`)
+    ///
+    /// This only fills `self.states` - the update with the array must be sent separately from outside
     fn run(&mut self) {
         use RegisterMovePhase::*;
 
@@ -485,7 +506,7 @@ impl<'a> MovingPhaseManager<'a> {
             let player_indexes_by_priority = {
                 let mut indexes: Vec<usize> = (0..self.game.players.len()).collect();
                 indexes.sort_by_key(|i| Priority {
-                    me: self.game.players[*i].public_state.position,
+                    my_position: self.game.players[*i].public_state.position,
                     antenna: self.game.map.antenna,
                 });
                 indexes
@@ -530,7 +551,7 @@ impl<'a> MovingPhaseManager<'a> {
                             && !walls.get(dir)
                             // is on belt and can leave current tile
                             {
-                                let new_pos = dir.apply_to(&player_pos);
+                                let new_pos = player_pos.moved_in_direction(*dir);
                                 let new_tile = self.game.map.tiles.get(new_pos);
                                 if new_tile.is_some_and(|t| t.walls.get(&dir.rotated().rotated())) {
                                     // can't enter target tile (wall)
@@ -613,11 +634,11 @@ impl<'a> MovingPhaseManager<'a> {
                             }
                         }
                         to_reboot.sort_by_key(|i| Priority {
-                            me: self.game.players[*i].public_state.position,
+                            my_position: self.game.players[*i].public_state.position,
                             antenna: self.game.map.antenna,
                         });
                         self.reboot_queue.extend(to_reboot);
-                        self.update_with_reboots();
+                        self.execute_reboots();
                     }
                     next_phase
                 }
@@ -634,9 +655,8 @@ impl<'a> MovingPhaseManager<'a> {
                             self.game.map.tiles.get(pos).unwrap().typ
                         {
                             if *active.get(register).unwrap() {
-                                debug!("Moving player {} from a push panel", player_i);
                                 self.mov(player_i, dir);
-                                self.update_with_reboots();
+                                self.execute_reboots();
                             }
                         }
                     }
@@ -677,10 +697,6 @@ impl<'a> MovingPhaseManager<'a> {
                         'map_bullet_flight: loop {
                             for player2 in &mut self.game.players {
                                 if player2.public_state.position == bullet_pos {
-                                    debug!(
-                                        "Laser shot player {:?}",
-                                        player2.connected.upgrade().map(|c| c.player_name.clone())
-                                    );
                                     player2.draw_spam();
                                     animations.push(Animation::BulletFlight {
                                         from: *start_pos,
@@ -695,7 +711,7 @@ impl<'a> MovingPhaseManager<'a> {
                             if tile.walls.get(bullet_dir) {
                                 break;
                             }
-                            bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                            bullet_pos = bullet_pos.moved_in_direction(*bullet_dir);
                             tile = match self.game.map.tiles.get(bullet_pos) {
                                 // out of map
                                 None => break,
@@ -722,7 +738,7 @@ impl<'a> MovingPhaseManager<'a> {
                             if tile.walls.get(&bullet_dir) {
                                 break;
                             }
-                            bullet_pos = bullet_dir.apply_to(&bullet_pos);
+                            bullet_pos = bullet_pos.moved_in_direction(bullet_dir);
                             tile = match self.game.map.tiles.get(bullet_pos) {
                                 // out of map
                                 None => break,
@@ -734,11 +750,6 @@ impl<'a> MovingPhaseManager<'a> {
                             }
                             for player2 in &mut self.game.players {
                                 if player2.public_state.position == bullet_pos {
-                                    debug!(
-                                        "PLayer {} shot player {:?}",
-                                        player_i,
-                                        player2.connected.upgrade().map(|c| c.player_name.clone())
-                                    );
                                     player2.draw_spam();
                                     animations.push(Animation::BulletFlight {
                                         from: start_pos,
@@ -809,7 +820,7 @@ impl<'a> MovingPhaseManager<'a> {
                         {
                             player.discard_pile.extend(player_programmed);
                             player.discard_pile.extend(mem::take(&mut player.hand));
-                            player.hand = player.draw_n(9);
+                            player.hand = player.draw_n_cards(9);
                             player.public_state.is_rebooting = false;
                         }
                         self.game.phase = GamePhase::Programming(
@@ -826,21 +837,22 @@ impl<'a> MovingPhaseManager<'a> {
         }
     }
 }
-/// Small util that sorts by priority
+/// Small utility type that helps sorting players by priority
 #[derive(PartialEq, Eq)]
 struct Priority {
-    me: Position,
+    my_position: Position,
     antenna: Position,
 }
 
 impl Priority {
     const fn dist(&self) -> u16 {
-        i16::abs_diff(self.antenna.x, self.me.x) + i16::abs_diff(self.antenna.y, self.me.y)
+        i16::abs_diff(self.antenna.x, self.my_position.x)
+            + i16::abs_diff(self.antenna.y, self.my_position.y)
     }
     fn sortable_bearing(&self) -> f64 {
         let mut x = f64::atan2(
-            f64::from(self.antenna.x) - f64::from(self.me.x),
-            f64::from(self.antenna.y) - f64::from(self.me.y),
+            f64::from(self.antenna.x) - f64::from(self.my_position.x),
+            f64::from(self.antenna.y) - f64::from(self.my_position.y),
         );
         if x > 0.0 {
             x -= std::f64::consts::TAU;

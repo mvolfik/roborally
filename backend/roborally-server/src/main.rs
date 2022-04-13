@@ -56,6 +56,8 @@ use warp::{reply::with_status, Filter, Reply};
 
 #[derive(Deserialize)]
 struct ConnectQuery {
+    game_name: String,
+    seat: usize,
     name: String,
 }
 
@@ -64,11 +66,19 @@ async fn socket_connect_handler(
     ws: warp::ws::Ws,
     games_lock: Games,
 ) -> impl Reply {
-    let game = games_lock.write().await.get_mut(&query.name).map(|entry| {
-        entry.last_nobody_connected = None;
-        Arc::clone(&entry.game)
-    });
-    ws.on_upgrade(move |socket| PlayerConnection::create_and_start(game, socket))
+    // It isn't possible to send an error response that can be reliably read in a browser during websocket handshake.
+    // Therefore a connection is created even on invalid game_name, and the error is sent in Websocket close reason
+    let game = games_lock
+        .write()
+        .await
+        .get_mut(&query.game_name)
+        .map(|entry| {
+            entry.last_nobody_connected = None;
+            Arc::clone(&entry.game)
+        });
+    ws.on_upgrade(move |socket| {
+        PlayerConnection::create_and_start(game, socket, query.name, query.seat)
+    })
 }
 
 #[derive(Deserialize)]

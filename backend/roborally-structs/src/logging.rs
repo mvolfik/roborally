@@ -1,7 +1,7 @@
 use std::thread;
 
 use log::Record;
-pub use log::{debug, error, info, trace, warn};
+pub use log::{error, info, warn};
 
 fn format(record: &Record) -> String {
     let cur_thread = thread::current();

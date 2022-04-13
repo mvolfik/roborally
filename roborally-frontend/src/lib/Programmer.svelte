@@ -23,7 +23,7 @@
 
   let flipDurationMs = 200;
 
-  function handleDnd(e: CustomEvent, register_i?: number) {
+  function handleDndEvent(e: CustomEvent, register_i?: number) {
     if (register_i === undefined) {
       cardsInHand = e.detail.items;
     } else {
@@ -58,8 +58,8 @@
   <div
     class="hand"
     use:dndzone={{ items: cardsInHand, flipDurationMs, type: zoneId }}
-    on:consider={(e) => handleDnd(e)}
-    on:finalize={(e) => handleDnd(e)}
+    on:consider={(e) => handleDndEvent(e)}
+    on:finalize={(e) => handleDndEvent(e)}
   >
     {#each cardsInHand as card (card.id)}
       <img
@@ -84,8 +84,8 @@
               (x) => !x[SHADOW_ITEM_MARKER_PROPERTY_NAME]
             ),
           }}
-          on:consider={(e) => handleDnd(e, i)}
-          on:finalize={(e) => handleDnd(e, i)}
+          on:consider={(e) => handleDndEvent(e, i)}
+          on:finalize={(e) => handleDndEvent(e, i)}
         >
           {#each maybeCard as card (card.id)}
             <img

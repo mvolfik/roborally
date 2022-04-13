@@ -16,7 +16,6 @@
 #![feature(const_precise_live_drops)]
 #![feature(let_chains)]
 mod asset;
-mod utils;
 
 use crate::asset::AssetMap;
 use roborally_structs::{
@@ -64,12 +63,6 @@ pub fn parse_message(bytes: &[u8]) -> Result<HandleResult, JsValue> {
 
 #[wasm_bindgen]
 #[must_use]
-pub fn create_init_message(name: String, seat: usize) -> Vec<u8> {
-    rmp_serde::to_vec(&ClientMessage::Init { name, seat }).unwrap()
-}
-
-#[wasm_bindgen]
-#[must_use]
 pub fn create_program_cards_message(
     card1: &CardWrapper,
     card2: &CardWrapper,
@@ -102,6 +95,10 @@ impl ParsedMap {
     }
 
     #[must_use]
+    /// Used to render a map preview
+    ///
+    /// A specific asset for "Spawnpoint" doesn't exist, so for map preview, this method creates an artificial
+    /// state with a robot named "Spawnpoint" at each spawnpoint location
     pub fn get_artificial_spawn_state(&self) -> PlayerGameStateView {
         PlayerGameStateView::new(
             self.0
