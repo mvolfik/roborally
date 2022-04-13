@@ -231,7 +231,7 @@ mod wrapper {
         pub fn is_rebooting(&self) -> bool {
             self.state.is_rebooting
         }
-        
+
         #[wasm_bindgen(getter)]
         pub fn is_hidden(&self) -> bool {
             self.state.is_hidden

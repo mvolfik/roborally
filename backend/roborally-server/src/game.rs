@@ -839,8 +839,8 @@ impl Priority {
     }
     fn sortable_bearing(&self) -> f64 {
         let mut x = f64::atan2(
-            self.antenna.x as f64 - self.me.x as f64,
-            self.antenna.y as f64 - self.me.y as f64,
+            f64::from(self.antenna.x) - f64::from(self.me.x),
+            f64::from(self.antenna.y) - f64::from(self.me.y),
         );
         if x > 0.0 {
             x -= std::f64::consts::TAU;

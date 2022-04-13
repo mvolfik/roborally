@@ -248,9 +248,9 @@ async fn main() {
         .and(warp::get())
         .and(create_maps_state())
         .map(|maps: Maps| {
-            let mut maps = maps.keys().collect::<Vec<_>>();
-            maps.sort();
-            warp::reply::json(&maps)
+            let mut maps_vec = maps.keys().collect::<Vec<_>>();
+            maps_vec.sort();
+            warp::reply::json(&maps_vec)
         });
     let get_map = api
         .and(warp::path("map").and(warp::path::end()))
