@@ -242,6 +242,7 @@ impl Game {
             },
         );
         join_all(futures).await;
+        self.send_single_update().await;
     }
 }
 
@@ -429,6 +430,7 @@ impl<'a> MovingPhaseManager<'a> {
                 };
                 for _ in 0..n {
                     self.mov(player_i, dir);
+                    self.queue_update(&QueueUpdateType::StateOnly);
                     self.process_reboots_queue();
                     if self.game.players[player_i].public_state.is_rebooting {
                         break;
@@ -468,21 +470,12 @@ impl<'a> MovingPhaseManager<'a> {
     /// This function must be called when `game.phase` is still [`GameState::Programming`]
     /// Panics if programming phase isn't active or some player doesn't have all cards programmed
     ///
-    /// After this method returns, `game.phase` is set back to Programming (or eventualy `HasWinner`)
+    /// After this method returns, `game.phase` is set back to `Programming` (or eventualy `HasWinner`)
     fn run(&mut self) {
         use RegisterMovePhase::*;
 
-        if let GamePhase::Programming(cards) = &self.game.phase {
-            self.game.phase = GamePhase::Moving {
-                cards: cards.iter().map(|c| c.unwrap()).collect(),
-                register: 0,
-                register_phase: RegisterMovePhase::PlayerCards,
-            };
-        } else {
-            panic!("Attempted to start moving phase when programming phase wasn't active");
-        }
-
         loop {
+            self.queue_update(&QueueUpdateType::StateOnly);
             let GamePhase::Moving {register, register_phase, ..} = self.game.phase else {
                 unreachable!();
             };
@@ -511,9 +504,9 @@ impl<'a> MovingPhaseManager<'a> {
                     FastBelts
                 }
                 belts @ (FastBelts | SlowBelts) => {
-                    let (n, next_phase) = match belts {
-                        FastBelts => (2, SlowBelts),
-                        SlowBelts => (1, PushPanels),
+                    let (n, expected_is_fast, next_phase) = match belts {
+                        FastBelts => (2, true, SlowBelts),
+                        SlowBelts => (1, false, PushPanels),
                         _ => unreachable!(),
                     };
                     for _ in 0..n {
@@ -522,9 +515,9 @@ impl<'a> MovingPhaseManager<'a> {
                         for (player_i, player) in self.game.players.iter_mut().enumerate() {
                             let player_pos = player.public_state.position;
                             let position = if let Some(Tile {
-                                typ: TileType::Belt(true, dir),
+                                typ: TileType::Belt(is_fast, dir),
                                 ..
-                            }) = self.game.map.tiles.get(player_pos)
+                            }) = self.game.map.tiles.get(player_pos) && *is_fast == expected_is_fast
                             {
                                 dir.apply_to(&player_pos)
                             } else {
@@ -579,11 +572,13 @@ impl<'a> MovingPhaseManager<'a> {
                                 to_reboot.extend(players);
                             }
                         }
+                        self.queue_update(&QueueUpdateType::StateOnly);
                         to_reboot.sort_by_key(|i| Priority {
                             me: self.game.players[*i].public_state.position,
                             antenna: self.game.map.antenna,
                         });
                         self.reboot_queue.extend(to_reboot);
+                        self.process_reboots_queue();
                     }
                     next_phase
                 }
@@ -603,6 +598,7 @@ impl<'a> MovingPhaseManager<'a> {
                                 debug!("Moving player {} from a push panel", player_i);
                                 self.mov(player_i, dir);
                                 self.queue_update(&QueueUpdateType::StateOnly);
+                                self.process_reboots_queue();
                             }
                         }
                     }
@@ -727,6 +723,7 @@ impl<'a> MovingPhaseManager<'a> {
                         if self.game.map.checkpoints[player.public_state.checkpoint]
                             == player.public_state.position
                         {
+                            // animation possibly here
                             player.public_state.checkpoint += 1;
                             if winner.is_none()
                                 && player.public_state.checkpoint == self.game.map.checkpoints.len()
@@ -780,7 +777,6 @@ impl<'a> MovingPhaseManager<'a> {
                         self.game.phase = GamePhase::Programming(
                             repeat(None).take(self.game.players.len()).collect(),
                         );
-                        // todo
                         return;
                     }
                 }

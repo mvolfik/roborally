@@ -35,13 +35,9 @@
    */
   let stateIndicator: number | undefined;
   let state: PlayerGameStateView;
-  $: state =
-    stateIndicator === undefined
-      ? currentSimpleState
-      : stateArray[stateIndicator].state;
-
-  let movementPlayback: "automatic" | "manual" = "automatic";
-  let automaticPlaybackDelay = 1000;
+  let autoplay = true;
+  let automaticPlaybackDelay = 700;
+  let currentAnimationDuration = automaticPlaybackDelay;
 
   function handleProgrammingDone(
     e: CustomEvent<
@@ -51,6 +47,35 @@
     connection.send(create_program_cards_message(...e.detail).buffer);
   }
 
+  let timeoutHandle: number | undefined;
+
+  function step() {
+    clearTimeout(timeoutHandle);
+    timeoutHandle = undefined;
+
+    if (stateIndicator === stateArray.length - 1) {
+      gamePhaseExpandedStore.set(true);
+    }
+
+    if (
+      stateIndicator === undefined ||
+      stateIndicator === stateArray.length - 1
+    )
+      return;
+
+    currentAnimationDuration = automaticPlaybackDelay;
+    const item = stateArray[++stateIndicator];
+    item.process_animations(mapComponent?.handleBullet ?? (() => {}));
+
+    if (item.has_state) {
+      state = item.state;
+    }
+
+    if (autoplay) {
+      timeoutHandle = setTimeout(step, automaticPlaybackDelay);
+    }
+  }
+
   function messageHandler(e: MessageEvent) {
     let msg = parse_message(new Uint8Array(e.data));
     if (typeof msg === "string") {
@@ -58,8 +83,13 @@
     } else if (Array.isArray(msg)) {
       stateArray = msg;
       stateIndicator = 0;
+      state = stateArray[0].state;
+      onAutoplayChange(autoplay);
     } else {
       currentSimpleState = msg;
+      if (stateIndicator === undefined) {
+        state = currentSimpleState;
+      }
     }
   }
 
@@ -115,6 +145,22 @@
       phase = newPhase;
     }
   }
+  $: console.log({ state, stateArray, stateIndicator });
+
+  function onAutoplayChange(newAutoplay: boolean) {
+    if (newAutoplay) {
+      if (timeoutHandle === undefined) {
+        timeoutHandle = setTimeout(step, automaticPlaybackDelay);
+      }
+    } else {
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+        timeoutHandle = undefined;
+      }
+    }
+  }
+
+  $: onAutoplayChange(autoplay);
 </script>
 
 <svelte:window
@@ -126,6 +172,7 @@
 <div
   class="outer"
   style:--seat-color="hsla({3.979 + seat * 0.9}rad, 93%, 22%, 0.62)"
+  style:--animation-duration="{currentAnimationDuration}ms"
 >
   {#if map === undefined || state === undefined}
     <p style:text-align="center">Connecting...</p>
@@ -168,17 +215,12 @@
           <p class="phase-simple-text">Get ready for the next round!</p>
         {/if}
         {#if phase !== GamePhase.HasWinner}
-          <div>
+          <div class="animation-settings">
             <p>Show player movement:</p>
             <p>
               <label>
-                <input
-                  type="radio"
-                  name="movement-playback"
-                  value="automatic"
-                  bind:group={movementPlayback}
-                />
-                Automatically play
+                <input type="checkbox" bind:checked={autoplay} />
+                Autoplay
               </label>
               <label>
                 with delay:
@@ -187,40 +229,37 @@
                   min="100"
                   max="5000"
                   step="100"
+                  size="4"
                   bind:value={automaticPlaybackDelay}
                 />
                 ms
               </label>
             </p>
             <p>
-              <label>
-                <input
-                  type="radio"
-                  name="movement-playback"
-                  value="manual"
-                  bind:group={movementPlayback}
-                />
-                Manually
-              </label>
               <button
                 on:click={() => {
+                  autoplay = false;
                   do {
                     stateIndicator -= 1;
                   } while (!stateArray[stateIndicator].has_state);
+                  state = stateArray[stateIndicator].state;
                 }}
                 disabled={stateIndicator === undefined || stateIndicator <= 0}
                 >Previous</button
               >
               <button
-                on:click={() => {
-                  do {
-                    stateArray[stateIndicator++].process_animations(
-                      mapComponent?.handleBullet ?? (() => {})
-                    );
-                  } while (!stateArray[stateIndicator].has_state);
-                }}
+                on:click={step}
                 disabled={stateIndicator === undefined ||
                   stateIndicator >= stateArray.length - 1}>Next</button
+              >
+              <button
+                on:click={() => {
+                  stateIndicator = undefined;
+                  state = currentSimpleState;
+                }}
+                disabled={stateIndicator === undefined ||
+                  stateIndicator < stateArray.length - 1}
+                >Continue to next round</button
               >
             </p>
           </div>
@@ -334,6 +373,13 @@
 
   .phase-simple-text {
     margin: 0;
+  }
+
+  .animation-settings {
+    border-top: 1px solid black;
+  }
+  .animation-settings > p {
+    margin: 0.4rem 0;
   }
 
   .player-infobox {

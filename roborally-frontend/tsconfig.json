@@ -4,6 +4,7 @@
     "target": "esnext",
     "useDefineForClassFields": true,
     "module": "esnext",
+    "lib": ["DOM"],
     "resolveJsonModule": true,
     "baseUrl": ".",
     "allowJs": true,

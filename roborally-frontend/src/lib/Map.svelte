@@ -52,7 +52,7 @@
         top: calc((var(--tile-y) + 0.5) * var(--tile-size));
         transform: translate(-50%, -50%);
         transition-property: left, top;
-        transition: 1s linear;`;
+        transition: var(--animation-duration) linear;`;
 
       innerDiv.appendChild(bullet);
       bullet.addEventListener("transitionend", () => {
@@ -132,7 +132,7 @@
   .robot,
   .robot img {
     position: absolute;
-    transition: all 800ms ease-in-out;
+    transition: all var(--animation-duration) ease-in-out;
     transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
   }
   .robot > div {
