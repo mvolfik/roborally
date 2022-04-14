@@ -606,26 +606,28 @@ impl<'a> MovingPhaseManager<'a> {
                         }
                         let mut to_reboot = Vec::new();
                         for (position, players) in moved_positions {
-                            for (player_i, direction) in &players {
-                                let player_state = &mut self.game.players[*player_i].public_state;
-                                player_state.position = position;
-                                player_state.direction = *direction;
-                            }
-                            if !self
+                            let should_reboot = !self
                                 .game
                                 .map
                                 .tiles
                                 .get(position)
-                                .is_some_and(|t| t.typ != TileType::Void)
-                            {
-                                to_reboot.extend(players.into_iter().map(|(i, _)| i));
+                                .is_some_and(|t| t.typ != TileType::Void);
+                            for (player_i, direction) in &players {
+                                let player_state = &mut self.game.players[*player_i].public_state;
+                                if should_reboot {
+                                    // priority somehow needs to be determined - use position before the move
+                                    to_reboot.push((*player_i, player_state.position));
+                                }
+                                player_state.position = position;
+                                player_state.direction = *direction;
                             }
                         }
-                        to_reboot.sort_by_key(|i| Priority {
-                            my_position: self.game.players[*i].public_state.position,
+                        to_reboot.sort_by_key(|(_, pos)| Priority {
+                            my_position: *pos,
                             antenna: self.game.map.antenna,
                         });
-                        self.reboot_queue.extend(to_reboot);
+                        self.reboot_queue
+                            .extend(to_reboot.into_iter().map(|(player_i, _)| player_i));
                         self.execute_reboots();
                     }
                     next_phase
@@ -767,14 +769,10 @@ impl<'a> MovingPhaseManager<'a> {
                         {
                             info!(
                                 "Game won by {}",
-                                self.game
-                                    .players[player_i]
-                                    .connected
-                                    .upgrade()
-                                    .map_or_else(
-                                        || "<disconnected player>".to_owned(),
-                                        |p| p.player_name.clone()
-                                    )
+                                self.game.players[player_i].connected.upgrade().map_or_else(
+                                    || "<disconnected player>".to_owned(),
+                                    |p| p.player_name.clone()
+                                )
                             );
                             self.game.phase = GamePhase::HasWinner(player_i);
                             return;
