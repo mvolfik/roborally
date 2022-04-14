@@ -30,8 +30,8 @@ mod platform {
     static LOGGER: Logger = Logger;
 
     impl Log for Logger {
-        fn enabled(&self, _metadata: &Metadata) -> bool {
-            true
+        fn enabled(&self, metadata: &Metadata) -> bool {
+            metadata.level() <= log::Level::Info
         }
 
         fn log(&self, record: &Record) {
