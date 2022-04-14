@@ -4,6 +4,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
+/// This structure helps abstract transformation specification from "serialization" into CSS
 pub struct Effects {
     pub rotate: ContinuousDirection,
     pub flip_x: bool,

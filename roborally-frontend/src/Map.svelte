@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AssetMap, PlayerGameStateView, Position } from "frontend-wasm";
-  import robot from "../assets/robot.png?url";
+  import robot from "./assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
   import { getTexture } from "./utils";
 
@@ -38,7 +38,7 @@
 
     requestAnimationFrame(() => {
       const bullet = document.createElement("img");
-      bullet.src = new URL("../assets/bullet.png", import.meta.url).toString();
+      bullet.src = new URL("./assets/bullet.png", import.meta.url).toString();
       bullet.style.cssText = `
         position: absolute;
         --tile-x: ${fromX};

@@ -18,8 +18,8 @@
   import { elasticOut } from "svelte/easing";
   import { fly, type TransitionConfig } from "svelte/transition";
 
-  import unfoldLess from "../assets/unfold_less.svg?url";
-  import unfoldMore from "../assets/unfold_more.svg?url";
+  import unfoldLess from "./assets/unfold_less.svg?url";
+  import unfoldMore from "./assets/unfold_more.svg?url";
   export let side: "top" | "right" | "bottom" | "left";
   export let expandedStore = writable(false);
   export let label: string;

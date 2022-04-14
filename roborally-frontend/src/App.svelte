@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import Dialog from "./lib/Dialog.svelte";
+  import Dialog from "./Dialog.svelte";
 
-  import Game from "./lib/Game.svelte";
-  import Map from "./lib/Map.svelte";
-  import { fetchMap } from "./lib/utils";
+  import Game from "./Game.svelte";
+  import Map from "./Map.svelte";
+  import { fetchMap } from "./utils";
 
   let state:
     | { state: "disconnected" }
