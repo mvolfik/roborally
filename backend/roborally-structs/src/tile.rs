@@ -5,9 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct DirectionBools {
     pub up: bool,
     pub right: bool,
@@ -35,17 +34,15 @@ impl DirectionBools {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct Tile {
     pub typ: TileType,
     pub walls: DirectionBools,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct Grid<T> {
     vec: Vec<T>,
     size: Position,

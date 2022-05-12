@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::position::Direction;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum TileType {
     /// `V`
     Void,

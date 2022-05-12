@@ -5,9 +5,8 @@ use crate::{
     tile::{Grid, Tile},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub struct GameMap {
     pub tiles: Grid<Tile>,
     pub antenna: Position,

@@ -13,9 +13,8 @@ use crate::{
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum RegisterMovePhase {
     PlayerCards,
     FastBelts,
@@ -43,9 +42,8 @@ pub enum GamePhaseView {
     HasWinner(usize),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 /// Public state of 1 player
 pub struct PlayerPublicState {
     pub position: Position,

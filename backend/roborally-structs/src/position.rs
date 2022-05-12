@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "client")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
+#[cfg_attr(feature = "client", wasm_bindgen)]
 pub struct Position {
     pub x: i16,
     pub y: i16,
@@ -32,9 +32,8 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 pub enum Direction {
     Up,
     Right,
@@ -76,9 +75,8 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize))]
 /// A direction that can continuously rotate by more that 270 degrees in one direction
 ///
 /// While rotation by 360 degrees equals no rotation, CSS used to rotate robots weirdly

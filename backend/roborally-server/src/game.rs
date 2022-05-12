@@ -18,15 +18,17 @@ use roborally_structs::{
     tile_type::TileType,
     transport::{ServerMessage, StateArrayItem},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::game_connection::PlayerConnection;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Player {
     public_state: PlayerPublicState,
     draw_pile: Vec<Card>,
     hand: Vec<Card>,
     discard_pile: Vec<Card>,
+    #[serde(skip)]
     pub connected: Weak<PlayerConnection>,
 }
 
@@ -87,7 +89,7 @@ impl Player {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum GamePhase {
     Programming(Vec<Option<[Card; 5]>>),
     Moving {
@@ -98,7 +100,7 @@ pub enum GamePhase {
     HasWinner(usize),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Game {
     pub map: GameMap,
     pub players: Vec<Player>,

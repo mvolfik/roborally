@@ -222,6 +222,11 @@ struct GetMapQuery {
     name: String,
 }
 
+#[derive(Deserialize)]
+struct GetSaveFileQuery {
+    game_name: String,
+}
+
 #[tokio::main]
 async fn main() {
     logging::init();
@@ -280,6 +285,28 @@ async fn main() {
         .and(create_games_state())
         .and(warp::body::form::<NewGameData>())
         .then(new_game_handler);
+    #[allow(clippy::shadow_unrelated)]
+    let get_savefile = api
+        .and(warp::path("savefile").and(warp::path::end()))
+        .and(warp::query::<GetSaveFileQuery>())
+        .and(warp::get())
+        .and(create_games_state())
+        .then(
+            async move |query: GetSaveFileQuery, games_lock: Games| -> Box<dyn Reply> {
+                let guard = games_lock.read().await;
+                let games = &*guard;
+                let entry = match games.get(&query.game_name) {
+                    None => {
+                        return Box::new(with_status("Game doesn't exist", StatusCode::NOT_FOUND))
+                    }
+                    Some(e) => e,
+                };
+                let response = Box::new(
+                    rmp_serde::to_vec(&(&entry.map_name, &*entry.game.read().await)).unwrap(),
+                );
+                response
+            },
+        );
 
     let socket = warp::path("websocket")
         .and(warp::path("game").and(warp::path::end()))
@@ -294,6 +321,7 @@ async fn main() {
         .or(list_maps)
         .or(get_map)
         .or(new_game)
+        .or(get_savefile)
         .or(socket)
         .or(static_files);
     let ip_port = match std::env::var("PORT")
