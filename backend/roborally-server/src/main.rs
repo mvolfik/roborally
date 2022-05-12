@@ -52,7 +52,7 @@ use http::StatusCode;
 use roborally_structs::{game_map::GameMap, logging};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::Instant};
-use warp::{reply::with_status, Filter, Reply};
+use warp::{reply::with_status, Buf, Filter, Reply};
 
 #[derive(Deserialize)]
 struct ConnectQuery {
@@ -191,6 +191,39 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     warp::reply::json(&games_list)
 }
 
+async fn load_savefile_handler(
+    LoadSaveFileQuery { game_name }: LoadSaveFileQuery,
+    body: impl Buf + Send,
+    games_lock: Games,
+) -> impl Reply {
+    let mut games = games_lock.write().await;
+
+    if game_name.len() > 50 {
+        return with_status("Game name is too long".to_owned(), StatusCode::BAD_REQUEST);
+    }
+    match games.entry(game_name) {
+        Entry::Occupied(_) => with_status(
+            "Game with this name already exists".to_owned(),
+            StatusCode::BAD_REQUEST,
+        ),
+        Entry::Vacant(vacant) => match rmp_serde::from_read::<_, (String, Game)>(body.reader()) {
+            Ok((map_name, game)) => {
+                vacant.insert(GameIndexEntry {
+                    // NOTE: we're blindly trusting the map name from the savefile. A maliciously crafted savefile could introduce a game with invalid state
+                    map_name,
+                    last_nobody_connected: Some(Instant::now()),
+                    game: Arc::new(RwLock::new(game)),
+                });
+                with_status(String::new(), StatusCode::CREATED)
+            }
+            Err(e) => with_status(
+                format!("Error deserializing savefile: {}", e),
+                StatusCode::BAD_REQUEST,
+            ),
+        },
+    }
+}
+
 struct GameIndexEntry {
     map_name: String,
     last_nobody_connected: Option<Instant>,
@@ -224,6 +257,11 @@ struct GetMapQuery {
 
 #[derive(Deserialize)]
 struct GetSaveFileQuery {
+    game_name: String,
+}
+
+#[derive(Deserialize)]
+struct LoadSaveFileQuery {
     game_name: String,
 }
 
@@ -267,6 +305,7 @@ async fn main() {
             maps_vec.sort();
             warp::reply::json(&maps_vec)
         });
+    #[allow(clippy::shadow_unrelated)]
     let get_map = api
         .and(warp::path("map").and(warp::path::end()))
         .and(warp::query::<GetMapQuery>())
@@ -307,6 +346,13 @@ async fn main() {
                 response
             },
         );
+    let load_savefile = api
+        .and(warp::path("savefile").and(warp::path::end()))
+        .and(warp::query::<LoadSaveFileQuery>())
+        .and(warp::body::aggregate())
+        .and(warp::post())
+        .and(create_games_state())
+        .then(load_savefile_handler);
 
     let socket = warp::path("websocket")
         .and(warp::path("game").and(warp::path::end()))
@@ -322,6 +368,7 @@ async fn main() {
         .or(get_map)
         .or(new_game)
         .or(get_savefile)
+        .or(load_savefile)
         .or(socket)
         .or(static_files);
     let ip_port = match std::env::var("PORT")
