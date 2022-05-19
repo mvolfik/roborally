@@ -271,6 +271,7 @@ async fn main() {
     let games_lock: Games = Games::default();
     let maps: Maps = Arc::new(load_maps![
         "Test",
+        "Vest",
         "Dodge this",
         "Chop shop challenge",
         "Belt playground",
