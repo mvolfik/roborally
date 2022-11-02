@@ -12,4 +12,4 @@ console_error_panic_hook = "^0.1.7"
 js-sys = "^0.3.56"
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["client"]}
-wasm-bindgen = {version = "^0.2.79", features = ["nightly", "enable-interning"]}
+wasm-bindgen = {version = "^0.2.79", features = ["enable-interning"]}

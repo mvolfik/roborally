@@ -25,13 +25,11 @@
 // features
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
-#![feature(let_else)]
 #![feature(async_closure)]
 #![feature(array_zip)]
 #![feature(never_type)]
-#![feature(label_break_value)]
 #![feature(let_chains)]
-#![feature(is_some_with)]
+#![feature(is_some_and)]
 #![feature(iter_intersperse)]
 
 mod game;
