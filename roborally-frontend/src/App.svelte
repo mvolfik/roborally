@@ -449,6 +449,7 @@
           map={map.assets}
           players={artificialPlayers}
           player_names={artificialPlayers.map(() => "Spawnpoint")}
+          animationDuration={700}
         />
       </div>
     {/await}

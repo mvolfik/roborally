@@ -39,7 +39,7 @@ pub fn create_sender(mut sink: SplitSink<WebSocket, Message>) -> UnboundedSender
                         error!("Error sending message: {e}");
                     }
                 }
-                SocketMessage::Ping => sink.send(Message::ping(vec![])).await.unwrap(),
+                SocketMessage::Ping => sink.send(Message::ping(Vec::new())).await.unwrap(),
             }
         }
     });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "@fontsource/vt323";
   import type { AssetMap, PlayerPublicState, Position } from "frontend-wasm";
   import robot from "./assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
@@ -87,8 +88,12 @@
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <div class="tile" style:grid-column={x + 1} style:grid-row={y + 1}>
             {#each map.get(x, y).into_jsarray() as asset}
-              {@const assetUri = getTexture(asset.uri)}
-              {#if assetUri !== undefined}
+              {@const assetUri = asset.is_text
+                ? undefined
+                : getTexture(asset.value)}
+              {#if asset.is_text}
+                <span style={asset.style}>{asset.value}</span>
+              {:else if assetUri !== undefined}
                 <img style={asset.style} src={assetUri} alt="" />
               {/if}
             {/each}
@@ -164,5 +169,8 @@
   div.tile > * {
     position: absolute;
     transform-origin: calc(var(--tile-size) / 2) calc(var(--tile-size) / 2);
+  }
+  div.tile > span {
+    font-family: "VT323";
   }
 </style>

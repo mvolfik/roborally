@@ -12,6 +12,11 @@
   resolved "https://registry.yarnpkg.com/@esbuild/linux-loong64/-/linux-loong64-0.15.15.tgz#32c65517a09320b62530867345222fde7794fbe1"
   integrity sha512-lhz6UNPMDXUhtXSulw8XlFAtSYO26WmHQnCi2Lg2p+/TMiJKNLtZCYUxV4wG6rZMzXmr8InGpNwk+DLT2Hm0PA==
 
+"@fontsource/vt323@^4.5.10":
+  version "4.5.10"
+  resolved "https://registry.yarnpkg.com/@fontsource/vt323/-/vt323-4.5.10.tgz#133e5c7a1878e3d1fb46b5e8ce6a2f85c7f9fb38"
+  integrity sha512-INiL8rWWj/dKZ+oYXPQgdV0OYe6lD3+gsYbPrhHyiJYWlbACSUPbokNXKVrDqRqzXiLj5swKqf9TSJyC7gUGuQ==
+
 "@jridgewell/resolve-uri@3.1.0":
   version "3.1.0"
   resolved "https://registry.yarnpkg.com/@jridgewell/resolve-uri/-/resolve-uri-3.1.0.tgz#2203b118c157721addfe69d47b70465463066d78"

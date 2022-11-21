@@ -8,11 +8,12 @@ use roborally_structs::{
 };
 use wasm_bindgen::{intern, prelude::wasm_bindgen};
 
-#[wasm_bindgen]
+#[wasm_bindgen(skip_all)]
 #[derive(Clone)]
 pub struct Asset {
-    pub(crate) uri: String,
-    pub(crate) effects: Effects,
+    pub value: String,
+    pub effects: Effects,
+    pub is_text: bool,
 }
 
 create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_type: Asset);
@@ -21,13 +22,18 @@ create_array_type!( name: AssetArray, full_js_type: "Array<Asset>", rust_inner_t
 impl Asset {
     #[wasm_bindgen(getter)]
     #[must_use]
-    pub fn uri(&self) -> String {
-        intern(&self.uri).to_owned()
+    pub fn value(&self) -> String {
+        intern(&self.value).to_owned()
     }
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn style(&self) -> String {
         self.effects.to_string()
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn is_text(&self) -> bool {
+        self.is_text
     }
 }
 
@@ -91,7 +97,8 @@ impl From<GameMap> for AssetMap {
                     use TileType::*;
                     let mut tile_assets = match tile.typ {
                         Void => vec![Asset {
-                            uri: "floor.jpg".to_owned(),
+                            value: "floor.jpg".to_owned(),
+                            is_text: false,
                             effects: Effects {
                                 scale: 0.25,
                                 only_show_sides: Some(DirectionBools {
@@ -116,7 +123,8 @@ impl From<GameMap> for AssetMap {
                             },
                         }],
                         Floor => vec![Asset {
-                            uri: "floor.jpg".to_owned(),
+                            value: "floor.jpg".to_owned(),
+                            is_text: false,
                             effects: Effects {
                                 scale: 0.25,
                                 ..Effects::random_rotate_flip()
@@ -147,11 +155,12 @@ impl From<GameMap> for AssetMap {
                             };
 
                             vec![Asset {
-                                uri: format!(
+                                value: format!(
                                     "{}-belt-{}.jpg",
                                     if is_fast { "fast" } else { "slow" },
                                     mask
                                 ),
+                                is_text: false,
                                 effects: Effects {
                                     flip_x,
                                     rotate: dir.to_continuous(),
@@ -162,14 +171,16 @@ impl From<GameMap> for AssetMap {
                         }
                         Rotation(is_clockwise) => vec![
                             Asset {
-                                uri: "floor.jpg".to_owned(),
+                                value: "floor.jpg".to_owned(),
+                                is_text: false,
                                 effects: Effects {
                                     scale: 0.25,
                                     ..Effects::random_rotate_flip()
                                 },
                             },
                             Asset {
-                                uri: "rotate.png".to_owned(),
+                                value: "rotate.png".to_owned(),
+                                is_text: false,
                                 effects: Effects {
                                     scale: 0.25,
                                     flip_x: !is_clockwise,
@@ -177,37 +188,38 @@ impl From<GameMap> for AssetMap {
                                 },
                             }
                         ],
-                        PushPanel(dir, _div, _remainder) => {
-                            let assets = vec![Asset {
-                                uri: "push-panel.png".to_owned(),
+                        PushPanel(dir, div, remainder) => {
+                            let (text_direction, translate_y) = if dir == Direction::Down {
+                                (Direction::Up,33.5)
+                            } else {
+                                (dir, -2.5)
+                            };
+                            vec![Asset {
+                                value: "push-panel.png".to_owned(),
+                                is_text: false,
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
                                     ..Effects::default()
                                 },
-                            }];
-                            // for (i, is_active) in active_rounds.iter().enumerate() {
-                            //     #[allow(clippy::cast_precision_loss)]
-                            //     assets.push(Asset {
-                            //         uri: format!(
-                            //             "push-panel-indicator-{}.png",
-                            //             if *is_active { "active" } else { "inactive" }
-                            //         ),
-                            //         effects: Effects {
-                            //             translate: Some(((2 + i * 12) as f64, 35.0)),
-                            //             rotate: dir.to_continuous(),
-                            //             ..Effects::default()
-                            //         },
-                            //     });
-                            // }
-                            // TODO ^^
-                            assets
+                            },
+                            Asset {
+                                value: format!("{}n+{}", div, remainder),
+                                is_text: true,
+                                effects: Effects {
+                                    rotate: text_direction.to_continuous(),
+                                    scale: 1.3,
+                                    translate: Some((12.5, translate_y)),
+                                    ..Effects::default()
+                                },
+                            }]
                         }
                     };
 
                     for (dir, is_wall) in tile.walls.to_items() {
                         if is_wall {
                             tile_assets.push(Asset {
-                                uri: "wall.png".to_owned(),
+                                value: "wall.png".to_owned(),
+                                is_text: false,
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
                                     scale: 0.25,
@@ -224,7 +236,8 @@ impl From<GameMap> for AssetMap {
         .unwrap();
 
         assets.get_mut(m.antenna).unwrap().0.push(Asset {
-            uri: "antenna.png".to_owned(),
+            value: "antenna.png".to_owned(),
+            is_text: false,
             effects: Effects {
                 scale: 0.25,
                 ..Effects::default()
@@ -232,7 +245,8 @@ impl From<GameMap> for AssetMap {
         });
 
         assets.get_mut(m.reboot_token.0).unwrap().0.push(Asset {
-            uri: "reboot-token.png".to_owned(),
+            value: "reboot-token.png".to_owned(),
+            is_text: false,
             effects: Effects {
                 rotate: m.reboot_token.1.to_continuous(),
                 ..Effects::default()
@@ -243,16 +257,19 @@ impl From<GameMap> for AssetMap {
             assets.get_mut(*checkpoint).unwrap().0.extend(
                 [
                     Asset {
-                        uri: "checkpoint.png".to_owned(),
+                        value: "checkpoint.png".to_owned(),
+                        is_text: false,
                         effects: Effects {
                             scale: 0.25,
                             ..Effects::default()
                         },
                     },
                     Asset {
-                        uri: format!("number-{}.png", i + 1),
+                        value: (i + 1).to_string(),
+                        is_text: true,
                         effects: Effects {
-                            translate: Some((33.0, 35.0)),
+                            translate: Some((18.0, 15.0)),
+                            scale: 2.0,
                             ..Effects::default()
                         },
                     },
@@ -263,7 +280,8 @@ impl From<GameMap> for AssetMap {
 
         for (pos, dir) in m.lasers {
             assets.get_mut(pos).unwrap().0.push(Asset {
-                uri: "laser.png".to_owned(),
+                value: "laser.png".to_owned(),
+                is_text: false,
                 effects: Effects {
                     rotate: dir.to_continuous(),
                     ..Effects::default()
