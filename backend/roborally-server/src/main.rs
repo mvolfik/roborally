@@ -57,13 +57,13 @@ use game_connection::PlayerConnection;
 use http::StatusCode;
 use roborally_structs::{
     game_map::GameMap,
-    logging::{self, error, info},
+    logging::{self, info},
 };
 use serde::{Deserialize, Serialize};
-use tokio::{sync::RwLock, time::Instant};
+use tokio::{select, sync::RwLock, time::Instant};
 use warp::{reply::with_status, Filter, Reply};
 
-use crate::parser::Parse;
+use crate::{game_connection::SocketMessage, parser::Parse};
 
 #[derive(Deserialize)]
 struct ConnectQuery {
@@ -298,7 +298,7 @@ async fn main() {
         .ok()
         .and_then(|p| u16::from_str(&p).ok())
         .map_or(([127, 0, 0, 1], 8080), |p| ([0, 0, 0, 0], p));
-    let server = warp::serve(routes).run(ip_port);
+    let server = warp::serve(routes);
     #[cfg(unix)]
     let mut term =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
@@ -306,17 +306,26 @@ async fn main() {
     let mut term = FakeTerm;
 
     info!("Running at {ip_port:?}");
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received Ctrl+C, exiting");
-        },
-        _ = server => {
-            error!("Server stopped running");
-        },
-        _ = term.recv() => {
-            info!("Received SIGTERM, exiting");
-        },
-    }
+    server
+        .bind_with_graceful_shutdown(ip_port, async move {
+            select! {
+                _ = tokio::signal::ctrl_c() => (),
+                _ = term.recv() => (),
+            }
+            for game in games_lock.read().await.values() {
+                for player in &game.state.read().unwrap().players {
+                    if let Some(conn) = player.connected.upgrade() {
+                        conn.sender
+                            .send(SocketMessage::CloseWithNotice(
+                                "Server is shutting down. Sorry :(".to_owned(),
+                            ))
+                            .unwrap();
+                    }
+                }
+            }
+        })
+        .1
+        .await;
 }
 
 #[cfg(windows)]
