@@ -21,7 +21,7 @@ export const DEFAULT_CARDS = {
       assetName: "u-turn",
       name: "U-Turn",
       code: [
-        "GAME.set_player_direction(player_i, GAME.get_player_direction(player_i) - 2)"
+        "GAME.set_player_direction(player_i, GAME.get_player_direction(player_i) + 2)",
       ],
       count: 1,
     },
@@ -36,17 +36,20 @@ export const DEFAULT_CARDS = {
     {
       assetName: "move2",
       name: "Move 2",
-      code: Array(2).fill(
-        "GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i))"
-      ),
+      code: [
+        "if GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i)).rebooted { return; }",
+        "GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i))",
+      ],
       count: 3,
     },
     {
       assetName: "move3",
       name: "Move 3",
-      code: Array(3).fill(
-        "GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i))"
-      ),
+      code: [
+        "if GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i)).rebooted { return; }",
+        "if GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i)).rebooted { return; }",
+        "GAME.move_player_in_direction(player_i, GAME.get_player_direction(player_i))",
+      ],
       count: 1,
     },
     {

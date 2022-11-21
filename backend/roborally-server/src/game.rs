@@ -154,10 +154,10 @@ impl Game {
 
     fn create_scope(&self) -> Scope<'static> {
         let mut scope = Scope::new();
-        scope.push_constant("PLAYER_COUNT", self.player_count);
-        scope.push_constant("ROUND_REGISTERS", self.round_registers);
-        scope.push_constant("MAP_WIDTH", self.map.tiles.size().x);
-        scope.push_constant("MAP_HEIGHT", self.map.tiles.size().y);
+        scope.push_constant("PLAYER_COUNT", self.player_count as i64);
+        scope.push_constant("ROUND_REGISTERS", self.round_registers as i64);
+        scope.push_constant("MAP_WIDTH", self.map.tiles.size().x as i64);
+        scope.push_constant("MAP_HEIGHT", self.map.tiles.size().y as i64);
         scope.push_constant("GAME", Arc::clone(&self.state));
         scope
     }

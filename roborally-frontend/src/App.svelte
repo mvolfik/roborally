@@ -394,7 +394,7 @@
             <code>(getter) MoveResult.moved: bool</code> - if the player moved
           </li>
           <li>
-            <code>(getter) MoveResult.reboot: bool</code> - if the player rebooted
+            <code>(getter) MoveResult.rebooted: bool</code> - if the player rebooted
             as a result of this move
           </li>
           <li>
@@ -799,7 +799,7 @@
     margin: 1rem 0 0.3rem -2rem;
   }
 
-  details > ul:first-child:last-child {
+  details > summary + ul:last-child {
     padding: 0;
   }
 

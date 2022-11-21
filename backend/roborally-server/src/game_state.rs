@@ -38,7 +38,7 @@ pub struct GameState {
 #[derive(Clone, Copy, Debug)]
 pub struct MoveResult {
     pub moved: bool,
-    pub reboot: bool,
+    pub rebooted: bool,
 }
 
 impl GameState {
@@ -177,7 +177,7 @@ impl GameState {
             }) => {
                 return Ok(MoveResult {
                     moved: true,
-                    reboot: false,
+                    rebooted: false,
                 })
             }
             Some(t) => t,
@@ -186,7 +186,7 @@ impl GameState {
         if origin_tile.walls.get(direction) {
             return Ok(MoveResult {
                 moved: false,
-                reboot: false,
+                rebooted: false,
             });
         }
         let target_pos = origin_pos.moved_in_direction(direction);
@@ -195,12 +195,12 @@ impl GameState {
             // falling out of map
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return Ok(MoveResult { moved: true, reboot: true });
+            return Ok(MoveResult { moved: true, rebooted: true });
         };
         if target_tile.walls.get(direction.rotated().rotated()) {
             return Ok(MoveResult {
                 moved: false,
-                reboot: false,
+                rebooted: false,
             });
         }
         if target_tile.typ == TileType::Void {
@@ -208,7 +208,7 @@ impl GameState {
             self.reboot_queue.push(player_i);
             return Ok(MoveResult {
                 moved: true,
-                reboot: true,
+                rebooted: true,
             });
         }
 
@@ -216,14 +216,14 @@ impl GameState {
             if !self.mov(player2_i, direction)?.moved {
                 return Ok(MoveResult {
                     moved: false,
-                    reboot: false,
+                    rebooted: false,
                 });
             }
         }
         self.players[player_i].public_state.position = target_pos;
         Ok(MoveResult {
             moved: true,
-            reboot: false,
+            rebooted: false,
         })
     }
 
@@ -248,7 +248,7 @@ impl GameState {
             self.reboot_queue.push(player_i);
             return Ok(MoveResult {
                 moved: true,
-                reboot: true,
+                rebooted: true,
             });
         };
 
@@ -266,7 +266,7 @@ impl GameState {
         self.players[player_i].public_state.position = pos;
         Ok(MoveResult {
             moved: true,
-            reboot: false,
+            rebooted: false,
         })
     }
 

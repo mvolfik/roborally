@@ -94,9 +94,9 @@ pub mod game_api {
         move_result.moved
     }
 
-    #[rhai_fn(get = "reboot", pure)]
-    pub fn move_result_get_reboot(move_result: &mut MoveResult) -> bool {
-        move_result.reboot
+    #[rhai_fn(get = "rebooted", pure)]
+    pub fn move_result_get_rebooted(move_result: &mut MoveResult) -> bool {
+        move_result.rebooted
     }
 
     pub type PlayerDirection = roborally_structs::position::ContinuousDirection;
