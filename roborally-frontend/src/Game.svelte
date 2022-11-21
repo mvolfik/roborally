@@ -405,10 +405,11 @@
     <!-- Left panel: rule hints -->
     <Collapsible side="left" label="Game execution log">
       <div
-        style:width="min(20rem, 80vw)"
+        style:width="min(50rem, 80vw)"
         style:padding="1rem"
         style:font-family="monospaced"
         style:white-space="pre"
+        style:overflow="scroll"
       >
         {log}
       </div>
