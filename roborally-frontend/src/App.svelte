@@ -749,7 +749,7 @@
   .card-pack-editor {
     display: grid;
     grid-template-columns: 1fr min(25vw, 17rem) auto;
-    width: min(50rem, 95vw - 4rem);
+    width: min(70rem, 95vw - 4rem);
     gap: 0.3rem;
     margin-bottom: 0.3rem;
     overflow-y: scroll;
