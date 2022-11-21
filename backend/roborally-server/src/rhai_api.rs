@@ -4,9 +4,7 @@ use rhai::plugin::*;
 #[export_module]
 pub mod game_api {
     use rhai::EvalAltResult;
-    use std::sync::{Arc, RwLock};
-
-    pub type Game = Arc<RwLock<crate::game_state::GameState>>;
+    pub type Game = std::sync::Arc<std::sync::RwLock<crate::game_state::GameState>>;
 
     #[rhai_fn(pure, return_raw)]
     pub fn move_player_in_direction(
@@ -86,6 +84,20 @@ pub mod game_api {
         p.public_state.direction = direction;
         game.send_animation_item(&[], true);
         Ok(())
+    }
+
+    #[rhai_fn(pure)]
+    pub fn is_void_at(game: &mut Game, pos: MapPosition) -> bool {
+        !game
+            .read()
+            .unwrap()
+            .game
+            .upgrade()
+            .unwrap()
+            .map
+            .tiles
+            .get(pos)
+            .is_some_and(|t| t.typ != roborally_structs::tile_type::TileType::Void)
     }
 
     pub type MoveResult = crate::game_state::MoveResult;

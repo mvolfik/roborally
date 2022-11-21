@@ -229,7 +229,7 @@ impl Game {
                         &mut self.cards[card_i].2.lock().unwrap(),
                         &ast,
                         "execute",
-                        (player_i, register_i),
+                        (player_i as i64, register_i as i64),
                     );
                     if let Err(e) = res {
                         self.log.lock().unwrap().push_str(&format!(
