@@ -20,9 +20,9 @@ export const DEFAULT_CARDS = {
     {
       assetName: "u-turn",
       name: "U-Turn",
-      code: Array(2).fill(
-        "GAME.set_player_direction(player_i, GAME.get_player_direction(player_i) - 1)"
-      ),
+      code: [
+        "GAME.set_player_direction(player_i, GAME.get_player_direction(player_i) - 2)"
+      ],
       count: 1,
     },
     {

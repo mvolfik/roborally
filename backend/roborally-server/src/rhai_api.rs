@@ -4,22 +4,19 @@ use rhai::plugin::*;
 #[export_module]
 pub mod game_api {
     use rhai::EvalAltResult;
-    use roborally_structs::position::Position as RoborallyPosition;
     use std::sync::{Arc, RwLock};
 
-    use crate::game_state::GameState;
-
-    pub type Game = Arc<RwLock<GameState>>;
+    pub type Game = Arc<RwLock<crate::game_state::GameState>>;
 
     #[rhai_fn(pure, return_raw)]
     pub fn move_player_in_direction(
         game_lock: &mut Game,
-        player_i: usize,
+        player_i: i64,
         direction: PlayerDirection,
     ) -> Result<MoveResult, Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
         let res = game
-            .mov(player_i, direction)
+            .mov(player_i as usize, direction)
             .map_err(Into::<Box<EvalAltResult>>::into)?;
         game.execute_reboots();
         Ok(res)
@@ -28,45 +25,49 @@ pub mod game_api {
     #[rhai_fn(pure, return_raw)]
     pub fn force_move_player_to(
         game_lock: &mut Game,
-        player_i: usize,
-        pos: RoborallyPosition,
+        player_i: i64,
+        pos: MapPosition,
         pushing_direction: PlayerDirection,
     ) -> Result<MoveResult, Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
         let res = game
-            .force_move_to(player_i, pos, pushing_direction.into())
+            .force_move_to(player_i as usize, pos, pushing_direction.into())
             .map_err(Into::<Box<EvalAltResult>>::into)?;
         game.execute_reboots();
         Ok(res)
     }
 
     #[rhai_fn(pure)]
-    pub fn get_player_at_position(game: &mut Game, x: i64, y: i64) -> Option<usize> {
-        game.read().unwrap().player_at_position(RoborallyPosition {
-            x: x as i16,
-            y: y as i16,
-        })
+    pub fn get_player_at_position(game: &mut Game, pos: MapPosition) -> Dynamic {
+        game.read()
+            .unwrap()
+            .player_at_position(pos)
+            .map(|p| Dynamic::from_int(p as i64))
+            .unwrap_or_default()
     }
 
-    #[rhai_fn(pure)]
-    pub fn get_player_position(game: &mut Game, player_i: usize) -> Option<(i64, i64)> {
-        game.read().unwrap().players.get(player_i).map(|p| {
-            (
-                i64::from(p.public_state.position.x),
-                i64::from(p.public_state.position.y),
-            )
-        })
+    #[rhai_fn(pure, return_raw)]
+    pub fn get_player_position(
+        game: &mut Game,
+        player_i: i64,
+    ) -> Result<MapPosition, Box<EvalAltResult>> {
+        game.read()
+            .unwrap()
+            .players
+            .get(player_i as usize)
+            .map(|p| p.public_state.position)
+            .ok_or_else(|| "There aren't that many players".into())
     }
 
     #[rhai_fn(pure, return_raw)]
     pub fn get_player_direction(
         game: &mut Game,
-        player_i: usize,
+        player_i: i64,
     ) -> Result<PlayerDirection, Box<EvalAltResult>> {
         game.read()
             .unwrap()
             .players
-            .get(player_i)
+            .get(player_i as usize)
             .map(|p| p.public_state.direction)
             .ok_or_else(|| "There aren't that many players".into())
     }
@@ -74,11 +75,11 @@ pub mod game_api {
     #[rhai_fn(pure, return_raw)]
     pub fn set_player_direction(
         game_lock: &mut Game,
-        player_i: usize,
+        player_i: i64,
         direction: PlayerDirection,
     ) -> Result<(), Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
-        let Some(p) = game.players.get_mut(player_i)
+        let Some(p) = game.players.get_mut(player_i as usize)
         else {
             return Err("There aren't that many players".into());
         };
@@ -100,6 +101,10 @@ pub mod game_api {
 
     pub type PlayerDirection = roborally_structs::position::ContinuousDirection;
 
+    pub fn direction_up() -> PlayerDirection {
+        roborally_structs::position::Direction::Up.to_continuous()
+    }
+
     #[rhai_fn(name = "+", pure)]
     pub fn add_direction(direction: &mut PlayerDirection, increase: i64) -> PlayerDirection {
         *direction + increase
@@ -119,5 +124,29 @@ pub mod game_api {
             Down => 2,
             Left => 3,
         }
+    }
+
+    pub type MapPosition = roborally_structs::position::Position;
+
+    pub fn position_from_xy(x: i64, y: i64) -> MapPosition {
+        MapPosition {
+            x: x as i16,
+            y: y as i16,
+        }
+    }
+
+    #[rhai_fn(get = "x", pure)]
+    pub fn position_get_x(pos: &mut MapPosition) -> i64 {
+        pos.x as i64
+    }
+
+    #[rhai_fn(get = "y", pure)]
+    pub fn position_get_y(pos: &mut MapPosition) -> i64 {
+        pos.y as i64
+    }
+
+    #[rhai_fn(name = "+", pure)]
+    pub fn add_position_direction(position: &mut MapPosition, dir: PlayerDirection) -> MapPosition {
+        position.moved_in_direction(dir.into())
     }
 }

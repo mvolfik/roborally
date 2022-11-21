@@ -235,76 +235,206 @@
     </table>
     <div class="intro-info">
       <p>
-        This is a remake of the board game Roborally, originally published by
+        This is a remake of the board game RoboRally, originally published by
         <a href="https://wizards.com">Wizards of the Coast</a>, a game studio
-        now owned by Hasbro. This web version was created in March &ndash; April
-        2022 as a high-school graduation project by Matěj Volf. For more
-        information:
+        now owned by Hasbro. First version of this project was created in March
+        &ndash; April 2022 as a high school graduation project by
+        <a href="https://mvolfik.github.io">Matěj Volf</a>. Since then,
+        occasional updates are made, usually (again) as school work. A few more
+        links:
       </p>
       <ul>
         <li>
           <a href="https://en.wikipedia.org/wiki/RoboRally"
-            >Read more about the game on Wikipedia</a
+            >RoboRally on Wikipedia</a
           >
         </li>
         <li>
           <a
             href="https://www.hasbro.com/common/documents/60D52426B94D40B98A9E78EE4DD8BF94/3EA9626BCAE94683B6184BD7EA3F1779.pdf"
-            >Download original rules PDF from Hasbro website</a
+            >Original rules PDF from Hasbro website</a
           >
         </li>
         <li>
-          Download the source code (<a href="/source-code.tar.gz">.tar.gz</a>,
-          <a href="/source-code.zip">.zip</a>) and read the technical
-          description in <code>README.md</code>
+          Source code (<a href="/source-code.tar.gz">.tar.gz</a>,
+          <a href="/source-code.zip">.zip</a>,
+          <a href="https://github.com/mvolfik/roborally">GitHub</a>)
         </li>
       </ul>
-      <p>This game differs from the original rules in the following:</p>
-      <ul>
-        <li>
-          There's no energy cubes and powerups (powerups break many assumptions
-          about movement rules and checks for installed player powerups would
-          need to be all over the code-base
-        </li>
-        <li>
-          There's only 1 reboot token for the whole map
-          <ul>
-            <li>
-              It wouldn't be that difficult to implement multiple reboot tokens,
-              with each of them having a covered area. However, there's no
-              notion of "one game map is made of multiple boards" in the web
-              version, so the reboot tokens would need some other way of showing
-              these areas
-            </li>
-          </ul>
-        </li>
-        <li>
-          To simplify the game simulation and network code, players can't make
-          choices outside of programming their robots. This constraint means the
-          following:
-          <ul>
-            <li>Spawn points are assigned randomly during game creation.</li>
-            <li>
-              There's only 1 type of damage cards (SPAM cards). However, there's
-              unlimited amount of them.
-            </li>
-            <li>
-              Players can't choose which way to turn their robot after reboot.
-              Instead, the robots automatically face in the direction of the
-              reboot token.
-            </li>
-          </ul>
-        </li>
-        <li>
-          While programming a board game usually requires handling many more
-          edge-cases that the original rules didn't think of, there's one weird
-          situation that the Roborally rules specify, but I decided to implement
-          in a different way: if you program "Again" after a SPAM card,
-          according to original rules, you should <i>again</i> draw a random card
-          and execute it. In my implementation, the SPAM card is replaced in the
-          register that it was programmed in, and again just re-executes that action
-        </li>
-      </ul>
+      <details>
+        <summary>Differences from original game</summary>
+        <ul>
+          <li>
+            There's no energy cubes and powerups &ndash; powerups break many
+            assumptions about movement rules and checks for installed player
+            powerups would need to be all over the code-base.
+          </li>
+          <li>
+            There's only 1 reboot token for the whole map.
+            <ul>
+              <li>
+                It wouldn't be that difficult to implement multiple reboot
+                tokens, with each of them having a covered area. However,
+                there's no notion of "one game map is made of multiple boards"
+                in the web version, so the reboot tokens would need some other
+                way of showing these areas.
+              </li>
+            </ul>
+          </li>
+          <li>Spawn points are assigned randomly during game creation.</li>
+          <li>
+            The backend used to be written in a bit of a spaghetti-code and it
+            would be very difficult to allow players to make any choices during
+            the card execution phase. Therefore the following choices have been
+            made:
+            <ul>
+              <li>
+                There's only 1 type of damage cards (SPAM cards). However,
+                there's unlimited amount of them.
+              </li>
+              <li>
+                Players can't choose which way to turn their robot after reboot.
+                Instead, the robots automatically face in the direction of the
+                reboot token.
+              </li>
+            </ul>
+            After I rewrote the backend in November 2022, this would be quite easy
+            to add, but I didn't yet find a compelling reason to actually do it.
+          </li>
+          <li>
+            While programming a board game usually requires handling many more
+            edge-cases that the original rules didn't think of, there's one
+            weird situation that the Roborally rules specify, but I decided to
+            implement in a different way: if you program "Again" after a SPAM
+            card, according to original rules, you should <i>again</i> draw a random
+            card and execute it. In my implementation, the SPAM card is replaced
+            in the register that it was programmed in, and again just re-executes
+            that action
+          </li>
+        </ul>
+      </details>
+      <details>
+        <summary>Custom cards programming documentation</summary>
+        <p>
+          The game supports creating custom cards, which can be programmed with
+          the <a href="https://rhai.rs/">Rhai scripting language</a>.
+        </p>
+        <p>
+          Your cards script must provide a function <code
+            >execute(player_i, register_i) {"{...}"}</code
+          >. Both arguments are integers (and obviously index from zero).
+          <code>register_i</code> is probably rarely useful, but if you want your
+          card to do different things on different turns, there you go. The function
+          shouldn't return any value.
+        </p>
+        <p>
+          At the beginning of a game, a Rhai Scope is created for each card,
+          which is persistent over the course of the whole game. Therefore you
+          have a shared scope for a card across all players, but scopes for
+          different cards are isolated.
+        </p>
+        <p>The following global variables are available:</p>
+        <ul>
+          <li>
+            <code>const GAME: Game</code> - current state of the game. You can't
+            modify it directly, only using different methods, see below
+          </li>
+          <li>
+            <code>const PLAYER_COUNT: int</code> - number of players in this game
+          </li>
+          <li>
+            <code>const ROUND_REGISTERS: int</code> - number of registers (cards)
+            programmed and executed each round
+          </li>
+          <li><code>const MAP_WIDTH: int</code> - width of the game map</li>
+          <li><code>const MAP_HEIGHT: int</code> - height of the game map</li>
+        </ul>
+        <p>The following functions and operations are available:</p>
+        <ul>
+          <li>
+            <code
+              >Game.move_player_in_direction(player_i: int, direction:
+              PlayerDirection): MoveResult</code
+            > - moves the player by 1 tile in the given direction, eventually pushing
+            any players in the way and executing reboots immediately after
+          </li>
+          <li>
+            <code
+              >Game.force_move_player_to(player_i: int, pos: MapPosition,
+              pushing_direction: PlayerDirection): MoveResult</code
+            > - moves the player to the given position, eventually pushing away a
+            player already standing on that tile in the given direction, and executing
+            reboots immediately after
+          </li>
+          <li>
+            <code>Game.get_player_at_position(pos: MapPosition): () | int</code>
+            - returns the number of player at given position, or the unit type if
+            there's none
+          </li>
+          <li>
+            <code>Game.get_player_position(player_i: int): MapPosition</code> - returns
+            the position of given player
+          </li>
+          <li>
+            <code
+              >Game.get_player_direction(player_i: int): PlayerDirection</code
+            > - returns the direction of given player
+          </li>
+          <li>
+            <code
+              >Game.set_player_direction(player_i: int, direction:
+              PlayerDirection)</code
+            >
+            - sets the direction of given player (note that
+            <code>PlayerDirection</code> is sensitive to rotation by multiples of
+            360 degrees, so always reuse player's direction and only rotate it a
+            few times)
+          </li>
+          <li>
+            <code>(getter) MoveResult.moved: bool</code> - if the player moved
+          </li>
+          <li>
+            <code>(getter) MoveResult.reboot: bool</code> - if the player rebooted
+            as a result of this move
+          </li>
+          <li>
+            <code>direction_up(): PlayerDirection</code> - creates a new direction
+            upwards
+          </li>
+          <li>
+            <code>(operator) PlayerDirection + int: PlayerDirection</code> -
+            creates a new direction rotated N times 90 degrees clockwise:
+            <code>direction_up() + 3</code> returns a direction to the left
+          </li>
+          <li>
+            <code>(operator) PlayerDirection - int: PlayerDirection</code> - same
+            as above but counter-clockwise
+          </li>
+          <li>
+            <code>(getter) PlayerDirection.direction: int</code> - returns a number
+            indicating the direction: 0 &rarr; Up, 1 &rarr; Right, 2 &rarr; Down,
+            3 &rarr; Left
+          </li>
+          <li>
+            <code>position_from_xy(x: int, y: int): MapPosition</code> - creates
+            a new position object from <code>x</code> and <code>y</code>
+            coordinates (top left corner tile of the game map has coordinates
+            <code>0,0</code>; <code>y</code> increases down)
+          </li>
+          <li>
+            <code>(getter) MapPosition.x: int</code> - gets the <code>x</code> component
+            of the position coordinates
+          </li>
+          <li>
+            <code>(getter) MapPosition.y: int</code> - gets the <code>y</code> component
+            of the position coordinates
+          </li>
+          <li>
+            <code>(operator) MapPosition + PlayerDirection: MapPosition</code> -
+            creates a new position moved by 1 tile in the given direction
+          </li>
+        </ul>
+      </details>
     </div>
   </div>
 {/if}
@@ -658,5 +788,24 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 0.3rem;
+  }
+
+  details {
+    margin-left: 2rem;
+  }
+
+  summary {
+    cursor: pointer;
+    margin: 1rem 0 0.3rem -2rem;
+  }
+
+  details > ul:first-child:last-child {
+    padding: 0;
+  }
+
+  code {
+    font-size: 1.1em;
+    font-family: "Ubuntu Mono", monospace;
+    white-space: pre;
   }
 </style>

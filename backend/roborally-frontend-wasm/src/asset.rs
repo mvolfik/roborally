@@ -203,7 +203,7 @@ impl From<GameMap> for AssetMap {
                                 },
                             },
                             Asset {
-                                value: format!("{}n+{}", div, remainder),
+                                value: format!("{div}n+{remainder}"),
                                 is_text: true,
                                 effects: Effects {
                                     rotate: text_direction.to_continuous(),
