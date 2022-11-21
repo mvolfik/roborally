@@ -229,6 +229,7 @@
         player_names={new Array(player_count)
           .fill(undefined)
           .map((_, i) => generalState.get_player_name(i))}
+        animationDuration={automaticPlaybackDelay}
         bind:this={mapComponent}
       />
     </div>

@@ -7,6 +7,7 @@
   export let map: AssetMap;
   export let players: Array<PlayerPublicState>;
   export let player_names: Array<string>;
+  export let animationDuration: number;
 
   let innerDiv: HTMLDivElement;
 
@@ -62,7 +63,18 @@
   }
 
   export function handleCheckpointVisited(player_i: number) {
-    // TODO
+    const el = innerDiv.querySelectorAll(".robot")[player_i];
+    const ani = el.animate(
+      [
+        { scale: 1, offset: 0 },
+        { scale: 1.8, offset: 0.5 },
+        { scale: 1, offset: 1 },
+      ],
+      {
+        duration: animationDuration,
+        easing: "linear",
+      }
+    );
   }
 </script>
 
