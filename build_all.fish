@@ -2,7 +2,7 @@
 cd $(status dirname)
 
 cd backend/roborally-frontend-wasm
-wasm-pack build --release --target web --weak-refs
+wasm-pack build --target web --weak-refs
 
 cd ../../roborally-frontend
 yarn run build

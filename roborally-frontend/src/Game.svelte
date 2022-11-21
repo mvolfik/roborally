@@ -385,7 +385,7 @@
       key={phase === GamePhase.Moving}
       expandedStore={programmerExpandedStore}
     >
-      {#key [phase, programmingState, currentAnimationState]}
+      {#key [phase, currentAnimationState]}
         <Programmer
           initialCards={phase === GamePhase.Moving
             ? []
