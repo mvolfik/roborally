@@ -391,6 +391,10 @@
             few times)
           </li>
           <li>
+            <code>Game.is_void_at(position: MapPosition): bool</code> - returns true
+            if the given position is a void tile (hole in map or out of bounds)
+          </li>
+          <li>
             <code>(getter) MoveResult.moved: bool</code> - if the player moved
           </li>
           <li>
