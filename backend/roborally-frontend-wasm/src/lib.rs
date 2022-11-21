@@ -1,8 +1,11 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::use_self)]
-#![allow(clippy::future_not_send)]
+#![allow(clippy::missing_const_for_fn)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
@@ -31,60 +34,38 @@ mod asset;
 
 use crate::asset::AssetMap;
 use roborally_structs::{
-    card::wrapper::CardWrapper,
+    card::Card,
     game_map::GameMap,
-    game_state::{GamePhaseView, PlayerGameStateView, PlayerPublicState},
-    logging,
-    transport::{ClientMessage, ServerMessage},
+    game_state::player_public_state::{PlayerPublicState, PlayerPublicStateArray},
+    logging::{self, info},
+    transport::{wrapper::ServerMessageWrapper, ClientMessage, ServerMessage},
 };
 
-use js_sys::Array;
-use std::{convert::Into, iter::repeat_with, panic};
-use wasm_bindgen::{prelude::*, JsCast};
+use std::convert::Into;
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 /* ##### INIT ##### */
 #[wasm_bindgen(start)]
 pub fn run_initializations() {
-    panic::set_hook(Box::new(console_error_panic_hook::hook));
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     logging::init();
+    info!("WASM module initialized");
 }
 /* ##### /INIT ##### */
 
 #[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "string | Array<StateArrayItem> | PlayerGameStateView")]
-    pub type HandleResult;
-}
-
-#[wasm_bindgen]
-pub fn parse_message(bytes: &[u8]) -> Result<HandleResult, JsValue> {
-    Ok(
-        match rmp_serde::from_slice::<ServerMessage>(bytes)
-            .map_err::<JsValue, _>(|e| e.to_string().into())?
-        {
-            ServerMessage::Notice(msg) => JsValue::from_str(&msg).unchecked_into(),
-            ServerMessage::State(state) => JsValue::from(state).unchecked_into(),
-            ServerMessage::AnimatedStates(items) => items
-                .into_iter()
-                .map(JsValue::from)
-                .collect::<Array>()
-                .unchecked_into(),
-        },
-    )
+pub fn parse_message(bytes: &[u8]) -> Result<ServerMessageWrapper, JsValue> {
+    rmp_serde::from_slice::<ServerMessage>(bytes)
+        .map(ServerMessageWrapper)
+        .map_err::<JsValue, _>(|e| e.to_string().into())
 }
 
 #[wasm_bindgen]
 #[must_use]
-pub fn create_program_cards_message(
-    card1: &CardWrapper,
-    card2: &CardWrapper,
-    card3: &CardWrapper,
-    card4: &CardWrapper,
-    card5: &CardWrapper,
-) -> Vec<u8> {
-    rmp_serde::to_vec(&ClientMessage::Program([
-        **card1, **card2, **card3, **card4, **card5,
-    ]))
+pub fn create_program_cards_message(cards: Vec<u8>) -> Vec<u8> {
+    rmp_serde::to_vec(&ClientMessage::Program(
+        cards.into_iter().map(Card::from_number).collect(),
+    ))
     .unwrap()
 }
 
@@ -111,24 +92,17 @@ impl ParsedMap {
     ///
     /// A specific asset for "Spawnpoint" doesn't exist, so for map preview, this method creates an artificial
     /// state with a robot named "Spawnpoint" at each spawnpoint location
-    pub fn get_artificial_spawn_state(&self) -> PlayerGameStateView {
-        PlayerGameStateView::new(
-            self.0
-                .spawn_points
-                .iter()
-                .map(|(pos, dir)| PlayerPublicState {
-                    position: *pos,
-                    direction: dir.to_continuous(),
-                    checkpoint: 0,
-                    is_rebooting: false,
-                    is_hidden: false,
-                })
-                .collect(),
-            GamePhaseView::HasWinner(0),
-            Vec::new(),
-            repeat_with(|| Some("Spawnpoint".to_owned()))
-                .take(self.0.spawn_points.len())
-                .collect(),
-        )
+    pub fn get_artificial_spawn_state(&self) -> PlayerPublicStateArray {
+        self.0
+            .spawn_points
+            .iter()
+            .map(|(pos, dir)| PlayerPublicState {
+                position: *pos,
+                direction: dir.to_continuous(),
+                checkpoint: 0,
+                is_rebooting: false,
+                is_hidden: false,
+            })
+            .collect()
     }
 }

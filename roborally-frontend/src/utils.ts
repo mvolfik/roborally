@@ -1,26 +1,15 @@
 import { ParsedMap, parse_map } from "frontend-wasm";
 
-const assets = import.meta.globEager("./assets/textures/*.???", {
-  assert: { type: "url" },
-}) as Record<string, { default: string }>;
+const assets = import.meta.glob("./assets/textures/*.???", {
+  eager: true,
+  as: "url",
+}) as Record<string, string>;
 
 export function getTexture(name: string): string {
   return (
-    assets["./assets/textures/" + name]?.default ??
+    assets["./assets/textures/" + name] ??
     (console.warn(`Unknown asset ${name}, using floor as fallback`),
-    assets["./assets/textures/floor.jpg"].default)
-  );
-}
-
-const cardAssets = import.meta.globEager("./assets/cards/*.png", {
-  assert: { type: "url" },
-}) as Record<string, { default: string }>;
-
-export function getCardAsset(name: string): string {
-  return (
-    cardAssets["./assets/cards/" + name]?.default ??
-    (console.warn(`Unknown card ${name}, using Again as fallback`),
-    cardAssets["./assets/cards/again.png"].default)
+    assets["./assets/textures/floor.jpg"])
   );
 }
 

@@ -1,44 +1,51 @@
 <script lang="ts">
   import {
+    AnimationItem,
     AssetMap,
-    CardWrapper,
     create_program_cards_message,
-    GamePhase,
+    GeneralState,
     parse_message,
-    PlayerGameStateView,
-    StateArrayItem,
+    ProgrammingState,
+    ServerMessageType,
   } from "frontend-wasm";
   import { createEventDispatcher, onMount } from "svelte";
-  import { fly } from "svelte/transition";
 
   import { writable } from "svelte/store";
   import Map from "./Map.svelte";
   import Programmer from "./Programmer.svelte";
-  import { fetchMap, getCardAsset } from "./utils";
+  import { fetchMap } from "./utils";
   import Collapsible from "./Collapsible.svelte";
 
   export let game_name: string;
   export let name: string;
   export let seat: number;
   export let map_name: string;
+  export let cards_assets_names: [string, string][];
+  export let player_count: number;
+  export let round_registers: number;
 
+  let log = "";
   let connection: WebSocket;
   let map: AssetMap;
   let mapComponent: Map;
 
+  let generalState: GeneralState;
+
   /** If playing a sequence of state updates in the moving phase, they are all stored here */
-  let stateArray: Array<StateArrayItem> = [];
+  let stateArray: Array<AnimationItem> = [];
   /** If no sequence is playing, simply the current state. Otherwise, the game
    * should continue to this state after the sequence finishes */
-  let currentSimpleState: PlayerGameStateView;
+  let programmingState: ProgrammingState;
+  let nextProgrammingState: ProgrammingState | undefined;
+
   /**
    * number => index in stateArray
    * undefined => currentSimpleState
    */
   let stateIndicator: number | undefined;
 
-  /** The actual current state, as selected by `stateIndicator` */
-  let state: PlayerGameStateView;
+  /** The actual current state, as selected by `stateIndicator`; will always have state, not just animations */
+  let currentAnimationState: AnimationItem | undefined;
 
   let autoplay = true;
   let automaticPlaybackDelay = 700;
@@ -46,12 +53,10 @@
    * the duration in the middle of a running animation */
   let currentAnimationDuration = automaticPlaybackDelay;
 
-  function handleProgrammingDone(
-    e: CustomEvent<
-      [CardWrapper, CardWrapper, CardWrapper, CardWrapper, CardWrapper]
-    >
-  ) {
-    connection.send(create_program_cards_message(...e.detail).buffer);
+  function handleProgrammingDone(e: CustomEvent<number[]>) {
+    connection.send(
+      create_program_cards_message(new Uint8Array(e.detail)).buffer
+    );
   }
 
   let timeoutHandle: number | undefined;
@@ -66,44 +71,52 @@
     clearTimeout(timeoutHandle);
     timeoutHandle = undefined;
 
+    if (stateIndicator === undefined) return;
+
     if (stateIndicator === stateArray.length - 1) {
       gamePhaseExpandedStore.set(true);
-    }
-
-    if (
-      stateIndicator === undefined ||
-      stateIndicator === stateArray.length - 1
-    )
       return;
+    }
 
     currentAnimationDuration = automaticPlaybackDelay;
     const item = stateArray[++stateIndicator];
-    item.process_animations(mapComponent.handleBullet);
+    item.process_animations(
+      mapComponent.handleBullet,
+      mapComponent.handleCheckpointVisited
+    );
 
     if (item.has_state) {
-      state = item.state;
+      currentAnimationState = item;
     }
 
-    if (autoplay) {
-      timeoutHandle = setTimeout(step, automaticPlaybackDelay);
-    }
+    scheduleNextStep();
   }
 
   function handleMessage(e: MessageEvent) {
     let msg = parse_message(new Uint8Array(e.data));
-    if (typeof msg === "string") {
-      alert(msg);
-    } else if (Array.isArray(msg)) {
-      stateArray = msg;
-      stateIndicator = 0;
-      state = stateArray[0].state;
-      // start the timer if autoplay is on
-      onAutoplayChange(autoplay);
-    } else {
-      currentSimpleState = msg;
-      if (stateIndicator === undefined) {
-        state = currentSimpleState;
+    if (msg.typ === ServerMessageType.Notice) {
+      alert(msg.notice);
+    } else if (msg.typ === ServerMessageType.GameLog) {
+      log += msg.game_log;
+    } else if (msg.typ === ServerMessageType.GeneralState) {
+      generalState = msg.general_state;
+    } else if (msg.typ === ServerMessageType.ProgrammingState) {
+      if (currentAnimationState === undefined) {
+        programmingState = msg.programming_state;
+      } else {
+        nextProgrammingState = msg.programming_state;
       }
+    } else if (msg.typ === ServerMessageType.AnimatedState) {
+      stateArray = [...stateArray, msg.animated_state];
+
+      if (stateIndicator === undefined) {
+        stateIndicator = 0;
+        currentAnimationState = stateArray[0];
+      }
+
+      scheduleNextStep();
+    } else {
+      alert("Unknown message type");
     }
   }
 
@@ -144,6 +157,12 @@
     disconnect = undefined;
   };
 
+  enum GamePhase {
+    Programming,
+    ProgrammingMyselfDone,
+    Moving,
+  }
+
   // updated by the reactive block below
   let phase: GamePhase;
 
@@ -152,8 +171,12 @@
   let gamePhaseExpandedStore = writable(false);
 
   $: {
-    if (state === undefined) break $;
-    const newPhase = state.phase;
+    const newPhase =
+      currentAnimationState !== undefined
+        ? GamePhase.Moving
+        : programmingState?.prepared_cards === undefined
+        ? GamePhase.Programming
+        : GamePhase.ProgrammingMyselfDone;
     if (newPhase !== phase) {
       if (newPhase === GamePhase.Programming) {
         programmerExpandedStore.set(true);
@@ -166,16 +189,17 @@
     }
   }
 
-  function onAutoplayChange(newAutoplay: boolean) {
-    if (newAutoplay) {
-      if (timeoutHandle === undefined) {
-        timeoutHandle = setTimeout(step, automaticPlaybackDelay);
-      }
+  function scheduleNextStep() {
+    if (autoplay && timeoutHandle === undefined)
+      timeoutHandle = window.setTimeout(step, currentAnimationDuration);
+  }
+
+  function onAutoplayChange(_: boolean) {
+    if (timeoutHandle !== undefined && !autoplay) {
+      clearTimeout(timeoutHandle);
+      timeoutHandle = undefined;
     } else {
-      if (timeoutHandle !== undefined) {
-        clearTimeout(timeoutHandle);
-        timeoutHandle = undefined;
-      }
+      scheduleNextStep();
     }
   }
 
@@ -193,11 +217,20 @@
   style:--seat-color="hsla({3.979 + seat * 0.9}rad, 93%, 22%, 0.62)"
   style:--animation-duration="{currentAnimationDuration}ms"
 >
-  {#if map === undefined || state === undefined}
+  {#if map === undefined || generalState === undefined}
     <p style:text-align="center">Connecting...</p>
   {:else}
     <div class="map">
-      <Map {map} {state} bind:this={mapComponent} />
+      <Map
+        {map}
+        players={phase == GamePhase.Moving
+          ? currentAnimationState.player_states
+          : programmingState.player_states}
+        player_names={new Array(player_count)
+          .fill(undefined)
+          .map((_, i) => generalState.get_player_name(i))}
+        bind:this={mapComponent}
+      />
     </div>
 
     <!-- Top panel: phase indicator -->
@@ -208,18 +241,16 @@
       expandedStore={gamePhaseExpandedStore}
     >
       <div style:padding="0.7rem 1rem">
-        {#if phase === GamePhase.HasWinner}
-          <p class="phase-simple-text">
-            Game won by {state.get_winner_name()}
-          </p>
-        {:else if phase === GamePhase.Moving}
+        <p class="phase-simple-text">
+          {generalState.status}
+        </p>
+        {#if phase === GamePhase.Moving}
           <div>
-            Executing movement register: {state.moving_phase_register_number +
-              1}
+            Register: {currentAnimationState.register + 1}
           </div>
           <div
             class="register-move-phase-indicator"
-            style:--register-phase={state.moving_phase_register_phase + 1}
+            style:--register-phase={currentAnimationState.register_phase + 1}
           >
             <span class="marker">&gt;</span>
             <span>Programmed cards</span>
@@ -230,59 +261,59 @@
             <span>Lasers</span>
             <span>Checkpoints</span>
           </div>
-        {:else}
-          <p class="phase-simple-text">Get ready for the next round!</p>
         {/if}
-        {#if phase !== GamePhase.HasWinner}
-          <div class="animation-settings">
-            <p>Show player movement:</p>
-            <p>
-              <label>
-                <input type="checkbox" bind:checked={autoplay} />
-                Autoplay
-              </label>
-              <label>
-                with delay:
-                <input
-                  type="number"
-                  min="100"
-                  max="5000"
-                  step="100"
-                  size="4"
-                  bind:value={automaticPlaybackDelay}
-                />
-                ms
-              </label>
-            </p>
-            <p>
-              <button
-                on:click={() => {
-                  autoplay = false;
-                  do {
-                    stateIndicator -= 1;
-                  } while (!stateArray[stateIndicator].has_state);
-                  state = stateArray[stateIndicator].state;
-                }}
-                disabled={stateIndicator === undefined || stateIndicator <= 0}
-                >Previous</button
-              >
-              <button
-                on:click={step}
-                disabled={stateIndicator === undefined ||
-                  stateIndicator >= stateArray.length - 1}>Next</button
-              >
-              <button
-                on:click={() => {
-                  stateIndicator = undefined;
-                  state = currentSimpleState;
-                }}
-                disabled={stateIndicator === undefined ||
-                  stateIndicator < stateArray.length - 1}
-                >Continue to next round</button
-              >
-            </p>
-          </div>
-        {/if}
+        <div class="animation-settings">
+          <p>Show player movement:</p>
+          <p>
+            <label>
+              <input type="checkbox" bind:checked={autoplay} />
+              Autoplay
+            </label>
+            <label>
+              with delay:
+              <input
+                type="number"
+                min="100"
+                max="5000"
+                step="100"
+                size="4"
+                bind:value={automaticPlaybackDelay}
+              />
+              ms
+            </label>
+          </p>
+          <p>
+            <button
+              on:click={() => {
+                autoplay = false;
+                do {
+                  stateIndicator -= 1;
+                } while (!stateArray[stateIndicator].has_state);
+                currentAnimationState = stateArray[stateIndicator];
+              }}
+              disabled={stateIndicator === undefined || stateIndicator <= 0}
+              >Previous</button
+            >
+            <button
+              on:click={step}
+              disabled={stateIndicator === undefined ||
+                stateIndicator >= stateArray.length - 1}>Next</button
+            >
+            <button
+              on:click={() => {
+                stateIndicator = undefined;
+                currentAnimationState = undefined;
+                stateArray = [];
+                programmingState = nextProgrammingState;
+                nextProgrammingState = undefined;
+              }}
+              disabled={stateIndicator === undefined ||
+                stateIndicator < stateArray.length - 1 ||
+                nextProgrammingState === undefined}
+              >Continue to next round</button
+            >
+          </p>
+        </div>
       </div>
     </Collapsible>
 
@@ -294,8 +325,8 @@
       expandedStore={playersInfoExpandedStore}
       key={phase === GamePhase.Moving}
     >
-      {#each state.players as player, player_i}
-        {@const name = player.name}
+      {#each phase === GamePhase.Moving ? currentAnimationState.player_states : programmingState.player_states as player, player_i}
+        {@const name = generalState.get_player_name(player_i)}
         <div class="player-infobox" style:--player-i={player_i}>
           {#if player_i === seat}
             <div class="name self">
@@ -318,23 +349,27 @@
             </div>
           </div>
           {#if phase === GamePhase.Moving}
-            <img
-              src={getCardAsset(
-                state.get_player_card_for_current_register(player_i).asset_name
-              )}
-              alt="Card"
-            />
+            <div class="revealed-cards">
+              {#each currentAnimationState.get_revealed_cards(player_i) as card}
+                <div>
+                  <img
+                    src={cards_assets_names[card][0]}
+                    alt={cards_assets_names[card][1]}
+                  />
+                </div>
+              {/each}
+            </div>
             <div>
               Rebooting: <div
                 class="indicator"
                 class:true={player.is_rebooting}
               />
             </div>
-          {:else if phase !== GamePhase.HasWinner}
+          {:else}
             <div>
               Ready: <div
                 class="indicator"
-                class:true={state.is_ready_programming(player_i)}
+                class:true={programmingState.ready_players[player_i] === 1}
               />
             </div>
           {/if}
@@ -343,41 +378,38 @@
     </Collapsible>
 
     <!-- Bottom panel: programmer interface -->
-    {#if phase !== GamePhase.HasWinner}
-      <Collapsible
-        side="bottom"
-        label="Your cards"
-        key={phase === GamePhase.Programming}
-        expandedStore={programmerExpandedStore}
-      >
-        {#if phase === GamePhase.Programming}
-          <Programmer
-            initialCards={state.hand}
-            on:programmingDone={handleProgrammingDone}
-          />
-        {:else}
-          <div class="my-registers" transition:fly={{ y: 200 }}>
-            <span>Your programmed cards</span>
-            {#each [...Array(5)].map( (_, i) => state.get_my_register_card(i) ) as card}
-              <img src={getCardAsset(card.asset_name)} alt="" />
-            {/each}
-          </div>
-        {/if}
-      </Collapsible>
-    {/if}
+    <Collapsible
+      side="bottom"
+      label="Your cards"
+      key={phase === GamePhase.Moving}
+      expandedStore={programmerExpandedStore}
+    >
+      {#key [phase, programmingState, currentAnimationState]}
+        <Programmer
+          initialCards={phase === GamePhase.Moving
+            ? []
+            : [...programmingState.hand]}
+          {round_registers}
+          {cards_assets_names}
+          selected={phase === GamePhase.Programming
+            ? undefined
+            : phase === GamePhase.ProgrammingMyselfDone
+            ? [...programmingState.prepared_cards]
+            : [...currentAnimationState.my_cards]}
+          on:programmingDone={handleProgrammingDone}
+        />
+      {/key}
+    </Collapsible>
 
     <!-- Left panel: rule hints -->
-    <Collapsible side="left" label="Rule hints">
-      <div style:max-width="min(20rem, 80vw)" style:padding="1rem">
-        <p>Oh, hey there!</p>
-        <p>
-          One day, I hope to add here various hints for game rules relevant for
-          current game view and state. As you can see, I haven't done it yet, so
-          in the meantime, you can look into the <a
-            href="https://www.hasbro.com/common/documents/60D52426B94D40B98A9E78EE4DD8BF94/3EA9626BCAE94683B6184BD7EA3F1779.pdf"
-            >original rules PDF</a
-          >
-        </p>
+    <Collapsible side="left" label="Game execution log">
+      <div
+        style:width="min(20rem, 80vw)"
+        style:padding="1rem"
+        style:font-family="monospaced"
+        style:white-space="pre"
+      >
+        {log}
       </div>
     </Collapsible>
   {/if}
@@ -387,6 +419,7 @@
   .outer {
     --card-width: 4rem;
     --card-border-radius: 5px;
+    --card-margin: 0.5rem;
     overflow: hidden;
     position: relative;
     height: 100%;
@@ -421,10 +454,20 @@
     max-width: 60vw;
   }
 
-  .player-infobox img {
-    height: auto;
+  .player-infobox .revealed-cards img {
     width: var(--card-width);
+    height: calc(var(--card-width) * 10 / 7);
+    object-fit: cover;
     border-radius: var(--card-border-radius);
+  }
+  .player-infobox .revealed-cards div {
+    margin: 0 calc(var(--card-margin) / 2);
+    display: inline-block;
+    transition: width 0.5s;
+  }
+  .player-infobox .revealed-cards div:not(:last-child):not(:hover),
+  .player-infobox .revealed-cards div:hover ~ :last-child {
+    width: 2rem;
   }
 
   .name {
@@ -467,21 +510,5 @@
   }
   .marker {
     grid-row: var(--register-phase);
-  }
-
-  .my-registers {
-    padding: 0.5rem 2rem;
-    display: grid;
-    column-gap: 0.5rem;
-    grid-template-columns: auto auto auto auto auto;
-  }
-  .my-registers span {
-    grid-column: 1/-1;
-    margin-bottom: 0.3rem;
-    text-align: center;
-  }
-  .my-registers > img {
-    border-radius: var(--card-border-radius);
-    width: var(--card-width);
   }
 </style>

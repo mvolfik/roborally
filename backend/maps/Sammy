@@ -1,4 +1,4 @@
-Size=16,12 Antenna=7,11 Reboot=7,0:d Checkpoints=7,4;2,3;13,5 Spawnpoints=0,4:r;0,3:r;15,4:l;15,3:l Lasers=
+Name=Sammy Size=16,12 Antenna=7,11 Reboot=7,0:d Checkpoints=7,4;2,3;13,5 Spawnpoints=0,4:r;0,3:r;15,4:l;15,3:l Lasers=
 F;F;F;F;F;F;F;F;F;F;F;F;F;F;F;F
 F;F;F;F;F;F;F:l;F;F:r;F;F;F;F;F;F;F
 F;F;F:lu;F:ur;F;F;F:l;F;F:r;F;F;F;F:ul;F:ur;F;F

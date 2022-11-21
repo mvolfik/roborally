@@ -1,4 +1,4 @@
-Size=3,390 Antenna=1,0 Reboot=1,1:d Spawnpoints=0,0:d Checkpoints=2,0 Lasers=
+Name=Belt_playground Size=3,390 Antenna=1,0 Reboot=1,1:d Spawnpoints=0,0:d Checkpoints=2,0 Lasers=
 F:lu;F:ulrd;F:ru
 F:l;F;F:r
 F:l;F:u;F:r

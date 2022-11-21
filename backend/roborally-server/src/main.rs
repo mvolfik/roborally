@@ -2,6 +2,9 @@
 #![allow(clippy::use_self)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
@@ -15,7 +18,6 @@
 #![warn(clippy::get_unwrap)]
 #![warn(clippy::if_then_some_else_none)]
 #![warn(clippy::let_underscore_must_use)]
-#![warn(clippy::shadow_reuse)]
 #![warn(clippy::shadow_same)]
 #![warn(clippy::shadow_unrelated)]
 #![warn(clippy::str_to_string)]
@@ -34,23 +36,34 @@
 
 mod game;
 mod game_connection;
+mod game_state;
 mod parser;
+mod player;
+mod rhai_api;
 
 use std::{
     collections::hash_map::{Entry, HashMap},
+    fs,
+    io::Read,
+    mem,
     str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
 use futures::future::join_all;
-use game::{Game, GamePhase};
+use game::{Game, NewGameData};
 use game_connection::PlayerConnection;
 use http::StatusCode;
-use roborally_structs::{game_map::GameMap, logging};
+use roborally_structs::{
+    game_map::GameMap,
+    logging::{self, error, info},
+};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::RwLock, time::Instant};
-use warp::{reply::with_status, Buf, Filter, Reply};
+use warp::{reply::with_status, Filter, Reply};
+
+use crate::parser::Parse;
 
 #[derive(Deserialize)]
 struct ConnectQuery {
@@ -66,58 +79,36 @@ async fn socket_connect_handler(
 ) -> impl Reply {
     // It isn't possible to send an error response that can be reliably read in a browser during websocket handshake.
     // Therefore a connection is created even on invalid game_name, and the error is sent in Websocket close reason
-    let game = games_lock
-        .write()
-        .await
-        .get_mut(&query.game_name)
-        .map(|entry| {
-            entry.last_nobody_connected = None;
-            Arc::clone(&entry.game)
-        });
+    let game = games_lock.read().await.get(&query.game_name).map(|g| {
+        *g.last_nobody_connected.lock().unwrap() = None;
+        Arc::clone(g)
+    });
     ws.on_upgrade(move |socket| {
         PlayerConnection::create_and_start(game, socket, query.name, query.seat)
     })
 }
 
-#[derive(Deserialize)]
-struct NewGameData {
-    players: usize,
-    map_name: String,
-    name: String,
-}
-
-async fn new_game_handler(
-    maps: Maps,
-    games_lock: Games,
-    NewGameData {
-        players,
-        map_name,
-        name,
-    }: NewGameData,
-) -> impl Reply {
-    if name.len() > 50 {
+async fn new_game_handler(maps: Maps, games_lock: Games, mut data: NewGameData) -> impl Reply {
+    let game_name = mem::take(&mut data.name);
+    if game_name.len() > 50 {
         return with_status("Game name is too long".to_owned(), StatusCode::BAD_REQUEST);
     }
-    let Some(map) = maps.get(&map_name)
+    let Some(map) = maps.get(&data.map_name)
     else {
         return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST);
     };
-    let game = match Game::new(map.clone(), players) {
+    let game = match Game::new(map.clone(), data) {
         Ok(g) => g,
         Err(e) => return with_status(e, StatusCode::BAD_REQUEST),
     };
     let mut games = games_lock.write().await;
-    match games.entry(name) {
+    match games.entry(game_name) {
         Entry::Occupied(_) => with_status(
             "Game with this name already exists".to_owned(),
             StatusCode::BAD_REQUEST,
         ),
         Entry::Vacant(vacant) => {
-            vacant.insert(GameIndexEntry {
-                map_name,
-                last_nobody_connected: Some(Instant::now()),
-                game: Arc::new(RwLock::new(game)),
-            });
+            vacant.insert(game);
             with_status(String::new(), StatusCode::CREATED)
         }
     }
@@ -126,8 +117,12 @@ async fn new_game_handler(
 #[derive(Serialize)]
 struct GameListItem {
     seats: Vec<Option<String>>,
-    map_name: String,
     name: String,
+    map_name: String,
+    cards_assets_names: Vec<(String, String)>,
+    card_pack_size: usize,
+    round_registers: usize,
+    draw_cards: usize,
 }
 
 enum GameListResult {
@@ -139,15 +134,21 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     let mut games = games_lock.write().await;
     let games_futures: Vec<_> = games
         .iter_mut()
-        .map(async move |(game_name, index_entry)| {
-            let game = index_entry.game.read().await;
+        .map(async move |(game_name, game)| {
+            let state = game.state.read().unwrap();
             // while this cleans the game up from the list before all players leave,
             // that is not an issue - other players keep the game_arc reference as long
             // as they are connected, and no new connections are allowed anyways
-            if let GamePhase::HasWinner(_) = game.phase {
+            if state.winner.is_some()
+                || game
+                    .last_nobody_connected
+                    .lock()
+                    .unwrap()
+                    .is_some_and(|t| t.elapsed() > Duration::from_secs(300))
+            {
                 return GameListResult::Cleanup(game_name.clone());
             }
-            let seats: Vec<Option<String>> = game
+            let seats: Vec<Option<String>> = state
                 .players
                 .iter()
                 .map(|player| {
@@ -158,18 +159,33 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
                 })
                 .collect();
             if seats.iter().all(Option::is_none) {
-                if let Some(last_nobody_connected) = index_entry.last_nobody_connected {
+                let mut last_nobody_connected_guard = game.last_nobody_connected.lock().unwrap();
+                if let Some(last_nobody_connected) = *last_nobody_connected_guard {
                     if last_nobody_connected.elapsed() > Duration::from_secs(300) {
                         return GameListResult::Cleanup(game_name.clone());
                     }
                 } else {
-                    index_entry.last_nobody_connected = Some(Instant::now());
+                    *last_nobody_connected_guard = Some(Instant::now());
                 }
             }
             GameListResult::ListItem(GameListItem {
                 seats,
-                map_name: index_entry.map_name.clone(),
+                map_name: game.map.name.clone(),
                 name: game_name.clone(),
+                cards_assets_names: [
+                    ("/assets/again.png".to_owned(), "Again".to_owned()),
+                    ("/assets/spam.png".to_owned(), "SPAM".to_owned()),
+                ]
+                .into_iter()
+                .chain(
+                    game.cards
+                        .iter()
+                        .map(|c| (c.0.clone(), c.1.source().unwrap().to_owned())),
+                )
+                .collect(),
+                card_pack_size: game.card_pack_size,
+                round_registers: game.round_registers,
+                draw_cards: game.draw_cards,
             })
         })
         .collect();
@@ -189,93 +205,33 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     warp::reply::json(&games_list)
 }
 
-async fn load_savefile_handler(
-    LoadSaveFileQuery { game_name }: LoadSaveFileQuery,
-    body: impl Buf + Send,
-    games_lock: Games,
-) -> impl Reply {
-    let mut games = games_lock.write().await;
-
-    if game_name.len() > 50 {
-        return with_status("Game name is too long".to_owned(), StatusCode::BAD_REQUEST);
-    }
-    match games.entry(game_name) {
-        Entry::Occupied(_) => with_status(
-            "Game with this name already exists".to_owned(),
-            StatusCode::BAD_REQUEST,
-        ),
-        Entry::Vacant(vacant) => match rmp_serde::from_read::<_, (String, Game)>(body.reader()) {
-            Ok((map_name, game)) => {
-                vacant.insert(GameIndexEntry {
-                    // NOTE: we're blindly trusting the map name from the savefile. A maliciously crafted savefile could introduce a game with invalid state
-                    map_name,
-                    last_nobody_connected: Some(Instant::now()),
-                    game: Arc::new(RwLock::new(game)),
-                });
-                with_status(String::new(), StatusCode::CREATED)
-            }
-            Err(e) => with_status(
-                format!("Error deserializing savefile: {}", e),
-                StatusCode::BAD_REQUEST,
-            ),
-        },
-    }
-}
-
-struct GameIndexEntry {
-    map_name: String,
-    last_nobody_connected: Option<Instant>,
-    game: Arc<RwLock<Game>>,
-}
-
-type Games = Arc<RwLock<HashMap<String, GameIndexEntry>>>;
+type Games = Arc<RwLock<HashMap<String, Arc<Game>>>>;
 type Maps = Arc<HashMap<String, GameMap>>;
-
-macro_rules! load_maps {
-    [ $( $name: literal ),* ] => {
-        {
-            use crate::parser::Parse;
-            HashMap::from([
-                $(
-                    (
-                        $name.to_owned(),
-                        GameMap::parse(include_str!(concat!("../../../maps/", $name)), concat!("Map(", $name, ")"))
-                            .unwrap(),
-                    ),
-                )*
-            ])
-        }
-    }
-}
 
 #[derive(Deserialize)]
 struct GetMapQuery {
     name: String,
 }
 
-#[derive(Deserialize)]
-struct GetSaveFileQuery {
-    game_name: String,
-}
-
-#[derive(Deserialize)]
-struct LoadSaveFileQuery {
-    game_name: String,
-}
-
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     logging::init();
     let games_lock: Games = Games::default();
-    let maps: Maps = Arc::new(load_maps![
-        "Test",
-        "Vest",
-        "Dodge this",
-        "Chop shop challenge",
-        "Belt playground",
-        "Burn run",
-        "Sammy"
-    ]);
+    let maps: Maps = Arc::new(
+        fs::read_dir("maps")
+            .unwrap()
+            .map(|entry| {
+                let mut buffer = String::new();
+                fs::File::open(entry.unwrap().path())
+                    .unwrap()
+                    .read_to_string(&mut buffer)
+                    .unwrap();
+                let map = GameMap::parse(&buffer, "").unwrap();
+                (map.name.clone(), map)
+            })
+            .collect(),
+    );
 
     // state is a allow-anything "filter" which clones the games Arc and passes it as a context
     let create_games_state = || {
@@ -321,38 +277,8 @@ async fn main() {
         .and(warp::post())
         .and(create_maps_state())
         .and(create_games_state())
-        .and(warp::body::form::<NewGameData>())
+        .and(warp::body::json::<NewGameData>())
         .then(new_game_handler);
-    #[allow(clippy::shadow_unrelated)]
-    let get_savefile = api
-        .and(warp::path("savefile").and(warp::path::end()))
-        .and(warp::query::<GetSaveFileQuery>())
-        .and(warp::get())
-        .and(create_games_state())
-        .then(
-            async move |query: GetSaveFileQuery, games_lock: Games| -> Box<dyn Reply> {
-                let guard = games_lock.read().await;
-                let games = &*guard;
-                let entry = match games.get(&query.game_name) {
-                    None => {
-                        return Box::new(with_status("Game doesn't exist", StatusCode::NOT_FOUND))
-                    }
-                    Some(e) => e,
-                };
-                let response = Box::new(
-                    rmp_serde::to_vec(&(&entry.map_name, &*entry.game.read().await)).unwrap(),
-                );
-                response
-            },
-        );
-    let load_savefile = api
-        .and(warp::path("savefile").and(warp::path::end()))
-        .and(warp::query::<LoadSaveFileQuery>())
-        .and(warp::body::aggregate())
-        .and(warp::post())
-        .and(create_games_state())
-        .then(load_savefile_handler);
-
     let socket = warp::path("websocket")
         .and(warp::path("game").and(warp::path::end()))
         .and(warp::query::<ConnectQuery>())
@@ -366,18 +292,39 @@ async fn main() {
         .or(list_maps)
         .or(get_map)
         .or(new_game)
-        .or(get_savefile)
-        .or(load_savefile)
         .or(socket)
         .or(static_files);
-    let ip_port = match std::env::var("PORT")
+    let ip_port = std::env::var("PORT")
         .ok()
         .and_then(|p| u16::from_str(&p).ok())
-    {
-        Some(p) => ([0, 0, 0, 0], p),
-        None => ([127, 0, 0, 1], 8080),
-    };
+        .map_or(([127, 0, 0, 1], 8080), |p| ([0, 0, 0, 0], p));
     let server = warp::serve(routes).run(ip_port);
-    eprintln!("Running at {:?}", ip_port);
-    server.await;
+    #[cfg(unix)]
+    let mut term =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+    #[cfg(windows)]
+    let mut term = FakeTerm;
+
+    info!("Running at {ip_port:?}");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received Ctrl+C, exiting");
+        },
+        _ = server => {
+            error!("Server stopped running");
+        },
+        _ = term.recv() => {
+            info!("Received SIGTERM, exiting");
+        },
+    }
+}
+
+#[cfg(windows)]
+struct FakeTerm;
+
+#[cfg(windows)]
+impl FakeTerm {
+    async fn recv(&mut self) -> ! {
+        futures::future::pending().await
+    }
 }

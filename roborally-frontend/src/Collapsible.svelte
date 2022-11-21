@@ -1,5 +1,10 @@
 <script context="module" lang="ts">
-  import { Readable, readable, Writable, writable } from "svelte/store";
+  import {
+    type Readable,
+    readable,
+    type Writable,
+    writable,
+  } from "svelte/store";
   const globalExpandedList: Set<Writable<boolean>> = new Set();
   const onlyShowOne: Readable<boolean> = readable(null, (set) => {
     const update = (e: Pick<MediaQueryListEvent, "matches">) => {

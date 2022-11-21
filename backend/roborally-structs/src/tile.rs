@@ -15,7 +15,8 @@ pub struct DirectionBools {
 }
 
 impl DirectionBools {
-    pub fn get(&self, dir: &Direction) -> bool {
+    #[must_use]
+    pub const fn get(&self, dir: Direction) -> bool {
         match dir {
             Direction::Up => self.up,
             Direction::Right => self.right,
@@ -24,7 +25,8 @@ impl DirectionBools {
         }
     }
 
-    pub fn to_items(&self) -> [(Direction, bool); 4] {
+    #[must_use]
+    pub const fn to_items(&self) -> [(Direction, bool); 4] {
         [
             (Direction::Up, self.up),
             (Direction::Right, self.right),
@@ -49,6 +51,7 @@ pub struct Grid<T> {
 }
 
 impl<T> Grid<T> {
+    #[must_use]
     pub fn get(&self, pos: Position) -> Option<&T> {
         if 0 > pos.x || pos.x >= self.size.x || 0 > pos.y || pos.y >= self.size.y {
             return None;
@@ -56,6 +59,7 @@ impl<T> Grid<T> {
         self.vec.get((pos.y * self.size.x + pos.x) as usize)
     }
 
+    #[must_use]
     pub fn get_mut(&mut self, pos: Position) -> Option<&mut T> {
         if 0 > pos.x || pos.x >= self.size.x || 0 > pos.y || pos.y >= self.size.y {
             return None;
@@ -63,11 +67,13 @@ impl<T> Grid<T> {
         self.vec.get_mut((pos.y * self.size.x + pos.x) as usize)
     }
 
-    pub fn size(&self) -> Position {
+    #[must_use]
+    pub const fn size(&self) -> Position {
         self.size
     }
 
-    pub fn vec(&self) -> &Vec<T> {
+    #[must_use]
+    pub const fn vec(&self) -> &Vec<T> {
         &self.vec
     }
 

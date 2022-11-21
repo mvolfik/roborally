@@ -1,4 +1,4 @@
-Size=9,5 Antenna=0,4 Reboot=1,4:r Checkpoints=4,0 Spawnpoints=4,1:d;3,4:r;7,4:l Lasers=
+Name=Vest Size=9,5 Antenna=0,4 Reboot=1,4:r Checkpoints=4,0 Spawnpoints=4,1:d;3,4:r;7,4:l Lasers=
 V:d;V;V;F;F;Bfl;V;V;V:d
 F:l;Bsr;Bsr;Bsr;F:u;Bfu;Bsl;Bsl;Bsl
 Bsu;V:ul;V:u;V:urd;Bfd;Bfu:l;V;V;Bsu

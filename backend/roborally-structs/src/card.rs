@@ -2,57 +2,64 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Card {
-    SPAM,
-    Move1,
-    Move2,
-    Move3,
-    Reverse1,
-    TurnRight,
-    TurnLeft,
-    UTurn,
     Again,
+    SPAM,
+    Custom(usize),
 }
 
-/// wasm_bindgen doesn't support methods on enum, so it needs to be wrapped
-#[cfg(feature = "client")]
-pub mod wrapper {
-    use crate::create_array_type;
-
-    use super::Card;
-    use std::ops::Deref;
-    use wasm_bindgen::{intern, prelude::wasm_bindgen};
-
-    #[wasm_bindgen]
-    pub struct CardWrapper(#[wasm_bindgen(skip)] pub Card);
-
-    #[wasm_bindgen]
-    impl CardWrapper {
-        #[wasm_bindgen(getter)]
-        #[must_use]
-        pub fn asset_name(&self) -> String {
-            use Card::*;
-            intern(match self.0 {
-                SPAM => "spam.png",
-                Move1 => "move1.png",
-                Move2 => "move2.png",
-                Move3 => "move3.png",
-                Reverse1 => "reverse1.png",
-                TurnRight => "turn-right.png",
-                TurnLeft => "turn-left.png",
-                UTurn => "u-turn.png",
-                Again => "again.png",
-            })
-            .to_owned()
+impl Card {
+    #[must_use]
+    pub fn to_number(self) -> u8 {
+        match self {
+            Card::Again => 0,
+            Card::SPAM => 1,
+            Card::Custom(n) => n as u8 + 2,
         }
     }
 
-    impl Deref for CardWrapper {
-        type Target = Card;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
+    #[must_use]
+    pub fn from_number(n: u8) -> Self {
+        match n {
+            0 => Card::Again,
+            1 => Card::SPAM,
+            i => Card::Custom(i as usize - 2),
         }
     }
-
-    create_array_type!( name: CardWrapperArray, full_js_type: "Array<CardWrapper>", rust_inner_type: CardWrapper);
 }
+
+// /// `wasm_bindgen` doesn't support methods on enum, so it needs to be wrapped
+// #[cfg(feature = "client")]
+// pub mod wrapper {
+//     use crate::create_array_type;
+
+//     use super::Card;
+//     use std::ops::Deref;
+//     use wasm_bindgen::prelude::wasm_bindgen;
+
+//     #[wasm_bindgen(skip_all)]
+//     pub struct CardWrapper(pub Card);
+
+//     #[wasm_bindgen]
+//     impl CardWrapper {
+//         #[wasm_bindgen(getter)]
+//         #[must_use]
+//         pub fn asset_url_i(&self) -> usize {
+//             use Card::*;
+//             match &self.0 {
+//                 SPAM => 0,
+//                 Again => 1,
+//                 Custom(i) => i + 2,
+//             }
+//         }
+//     }
+
+//     impl Deref for CardWrapper {
+//         type Target = Card;
+
+//         fn deref(&self) -> &Self::Target {
+//             &self.0
+//         }
+//     }
+
+//     create_array_type!( name: CardArray, full_js_type: "Array<CardWrapper>", rust_inner_type: CardWrapper);
+// }

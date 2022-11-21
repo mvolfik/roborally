@@ -1,11 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { DEFAULT_CARDS, NEW_CARD } from "./defaultCards";
   import Dialog from "./Dialog.svelte";
 
   import Game from "./Game.svelte";
   import Map from "./Map.svelte";
   import { fetchMap } from "./utils";
 
+  type CardDefinition = {
+    asset: string;
+    code: string;
+    count: number;
+    name: string;
+  };
   let state:
     | { state: "disconnected" }
     | {
@@ -13,6 +20,12 @@
         chosenMap: string | undefined;
         players_n: number;
         name: string;
+        round_registers: number;
+        draw_cards: number;
+        card_pack: {
+          again_count: number;
+          cards: CardDefinition[];
+        };
       }
     | {
         state: "choosingSeat";
@@ -21,6 +34,8 @@
         seats: Array<string | null>;
         chosenSeat: number | undefined;
         name: string;
+        cards_assets_names: [string, string][];
+        round_registers: number;
       }
     | {
         state: "inGame";
@@ -28,6 +43,9 @@
         map_name: string;
         seat: number;
         name: string;
+        cards_assets_names: [string, string][];
+        player_count: number;
+        round_registers: number;
       } = {
     state: "disconnected",
   };
@@ -39,16 +57,26 @@
    * - if user expects an explicit refresh (after map creation or on refresh button click)
    *   - in that case, set this to a promise immediately
    * - silently, in background (periodic refresh)
-   *   - create a separate promise, wait for it to resolve, and then set this value to immediately resolved `Promise.resolve(...)`
+   *   - create a separate promise, wait for it to resolve, and only then update the value (and thus the list)
    */
   let games_promise = refresh_game_list();
   let previewedMap = undefined;
+  let editingPack:
+    | undefined
+    | {
+        again_count: number;
+        cards: CardDefinition[];
+      } = undefined;
 
   async function refresh_game_list(): Promise<
     {
+      seats: (string | null)[];
       name: string;
-      seats: Array<string | null>;
       map_name: string;
+      cards_assets_names: [string, string][];
+      card_pack_size: number;
+      round_registers: number;
+      draw_cards: number;
     }[]
   > {
     const r = await fetch("/api/list-games");
@@ -71,11 +99,15 @@
 
     const r = await fetch("/api/new-game", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        players: state.players_n.toString(),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         map_name: state.chosenMap,
         name: state.name,
+        player_count: state.players_n,
+        card_definitions: state.card_pack.cards,
+        round_registers: state.round_registers,
+        draw_cards: state.draw_cards,
+        again_count: state.card_pack.again_count,
       }),
     });
     let text = await r.text();
@@ -91,10 +123,8 @@
   onMount(() => {
     const interval = setInterval(() => {
       if (state.state !== "inGame") {
-        // await the fetch, and then set the promise to a "dummy" immediately-resolved one
-        refresh_game_list().then(
-          (val) => (games_promise = Promise.resolve(val))
-        );
+        let promise = refresh_game_list();
+        promise.finally(() => (games_promise = promise));
       }
     }, 10000);
     return () => clearInterval(interval);
@@ -114,6 +144,9 @@
     name={state.name}
     seat={state.seat}
     map_name={state.map_name}
+    cards_assets_names={state.cards_assets_names}
+    player_count={state.player_count}
+    round_registers={state.round_registers}
     on:disconnect={() => {
       state = { state: "disconnected" };
       games_promise = refresh_game_list();
@@ -142,6 +175,9 @@
             chosenMap: undefined,
             name: "",
             players_n: 3,
+            card_pack: DEFAULT_CARDS,
+            round_registers: 5,
+            draw_cards: 9,
           })}>Create new game</button
       >
     </p>
@@ -177,8 +213,10 @@
                         game_name: game.name,
                         map_name: game.map_name,
                         seats: game.seats,
+                        cards_assets_names: game.cards_assets_names,
                         chosenSeat: undefined,
                         name: "",
+                        round_registers: game.round_registers,
                       };
                     }}>Connect</button
                   >
@@ -285,6 +323,9 @@
           game_name: state.game_name,
           seat: state.chosenSeat,
           map_name: state.map_name,
+          cards_assets_names: state.cards_assets_names,
+          player_count: state.seats.length,
+          round_registers: state.round_registers,
         };
       }}
     >
@@ -330,6 +371,22 @@
           bind:value={state.players_n}
         />
       </label>
+      <label>
+        Draw cards: <input
+          type="number"
+          min="1"
+          step="1"
+          bind:value={state.draw_cards}
+        />
+      </label>
+      <label>
+        Registers executed per round: <input
+          type="number"
+          min="1"
+          step="1"
+          bind:value={state.round_registers}
+        />
+      </label>
       {#await fetchMaps()}
         <span style:grid-column="1/-1" style:text-align="center"
           >Please wait, loading available maps</span
@@ -353,11 +410,27 @@
           }}>Preview map</button
         >
       {/await}
+      <span style:grid-column="1/-1">
+        Starting pack of cards: {state.card_pack.cards.reduce(
+          (sum, next) => next.count + sum,
+          0
+        ) + state.card_pack.again_count} cards
+        <button
+          type="button"
+          on:click={() => {
+            if (state.state === "creatingGame")
+              editingPack = JSON.parse(JSON.stringify(state.card_pack));
+          }}
+        >
+          Edit
+        </button>
+      </span>
       <button
         type="submit"
         disabled={state.chosenMap === undefined || state.name.length === 0}
-        >Create</button
       >
+        Create
+      </button>
     </form>
   </Dialog>
 {/if}
@@ -370,10 +443,107 @@
     {#await fetchMapWithErrorHandler(previewedMap)}
       <span>Please wait, loading map preview</span>
     {:then map}
+      {@const artificialPlayers = map.get_artificial_spawn_state()}
       <div class="map-preview">
-        <Map map={map.assets} state={map.get_artificial_spawn_state()} />
+        <Map
+          map={map.assets}
+          players={artificialPlayers}
+          player_names={artificialPlayers.map(() => "Spawnpoint")}
+        />
       </div>
     {/await}
+  </Dialog>
+{/if}
+
+{#if editingPack !== undefined}
+  <Dialog
+    on:close={() => {
+      if (state.state === "creatingGame") state.card_pack = editingPack;
+      editingPack = undefined;
+    }}
+    title="Edit starting card pack"
+  >
+    <div class="card-pack-editor">
+      <span class="header" style:grid-row="3" style:align-self="center"
+        >Code</span
+      >
+      <span class="header" style:grid-column="2">Name</span>
+      <span class="header" style:grid-column="2">Asset URL</span>
+      <span class="header" style:grid-column="2">Count</span>
+
+      <textarea
+        disabled
+        style:text-align="center"
+        style:resize="none"
+        style:height="2.5rem"
+        style:min-height="0"
+        style:grid-row="4/6">&lt;Special card: Again&gt;</textarea
+      >
+      <input
+        type="url"
+        disabled
+        value={new URL("/assets/again.png", window.location.href).toString()}
+      />
+      <button disabled class="x" style:grid-row="4/6">X</button>
+      <input
+        type="number"
+        bind:value={editingPack.again_count}
+        min="0"
+        step="1"
+      />
+      {#each editingPack.cards as _, i}
+        <textarea bind:value={editingPack.cards[i].code} />
+        <input type="text" bind:value={editingPack.cards[i].name} />
+        <button
+          class="x"
+          on:click={() => {
+            editingPack.cards.splice(i, 1);
+            editingPack.cards = editingPack.cards;
+          }}>X</button
+        >
+        <input type="url" bind:value={editingPack.cards[i].asset} />
+        <input
+          type="number"
+          min="0"
+          step="1"
+          bind:value={editingPack.cards[i].count}
+        />
+      {/each}
+
+      <button
+        style:grid-column="1/-1"
+        on:click={() => {
+          editingPack.cards.push(NEW_CARD);
+          editingPack.cards = editingPack.cards;
+        }}
+      >
+        Add card
+      </button>
+    </div>
+    <div class="card-pack-buttons">
+      <button
+        on:click={() => {
+          editingPack = undefined;
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        on:click={() => {
+          editingPack = JSON.parse(JSON.stringify(DEFAULT_CARDS));
+        }}
+      >
+        Reset to default game pack
+      </button>
+      <button
+        on:click={() => {
+          if (state.state === "creatingGame") state.card_pack = editingPack;
+          editingPack = undefined;
+        }}
+      >
+        Save
+      </button>
+    </div>
   </Dialog>
 {/if}
 
@@ -443,5 +613,49 @@
   .intro-info {
     max-width: 60rem;
     margin-top: 5rem;
+  }
+
+  .card-pack-editor {
+    display: grid;
+    grid-template-columns: 1fr min(25vw, 17rem) auto;
+    width: min(50rem, 95vw - 4rem);
+    gap: 0.3rem;
+    margin-bottom: 0.3rem;
+    overflow-y: scroll;
+    max-height: calc(95vh - 6.5rem);
+    padding-right: 1rem;
+  }
+
+  .card-pack-editor .header {
+    font-weight: bold;
+    text-align: center;
+  }
+
+  .card-pack-editor textarea {
+    grid-column: 1;
+    grid-row: span 4;
+    resize: vertical;
+    min-height: 4rem;
+    height: 4rem;
+    white-space: pre;
+  }
+
+  .card-pack-editor input {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .card-pack-editor button.x {
+    grid-column: 3;
+    grid-row: span 3;
+    height: 1.8rem;
+    width: 1.8rem;
+    align-self: center;
+  }
+
+  .card-pack-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.3rem;
   }
 </style>

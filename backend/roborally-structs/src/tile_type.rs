@@ -12,8 +12,9 @@ pub enum TileType {
     /// `B(f|s){dir}`
     /// bool = is_fast
     Belt(bool, Direction),
-    /// `P{dir}[1][2][3][4][5]`
-    PushPanel(Direction, [bool; 5]),
+    /// `P{dir}{divisor}+{remainder}`
+    /// Panel is active on register_i % divisor == remainder
+    PushPanel(Direction, usize, usize),
     /// `R(cw|ccw)`
     /// bool = is_clockwise
     Rotation(bool),

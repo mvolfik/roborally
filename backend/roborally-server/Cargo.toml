@@ -7,10 +7,10 @@ version = "0.1.0"
 [dependencies]
 futures = "^0.3.21"
 http = "^0.2.6"
-percent-encoding = "^2.1.0"
 rand = "^0.8.5"
+rhai = {version = "^1.10.1", features = ["no_module", "sync"]}
 rmp-serde = "^1.0.0"
 roborally-structs = {version = "=0.1.0", path = "../roborally-structs", features = ["server"]}
 serde = {version = "^1.0.136", features = ["derive"]}
-tokio = {version = "^1.21.2", features = ["macros", "rt-multi-thread", "io-std"]}
+tokio = {version = "^1.21.2", features = ["macros", "rt-multi-thread", "io-std", "signal"]}
 warp = "^0.3.2"

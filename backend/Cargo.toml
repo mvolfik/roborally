@@ -1,6 +1,9 @@
 [workspace]
-members = ["roborally-structs", "roborally-server", "roborally-frontend-wasm"]
 default-members = ["roborally-server", "roborally-frontend-wasm"]
+members = ["roborally-structs", "roborally-server", "roborally-frontend-wasm"]
 
 [profile.release]
 opt-level = "s"
+
+[patch.crates-io]
+wasm-bindgen = {git = "https://github.com/mvolfik/wasm-bindgen", branch = "feat/skip-all"}

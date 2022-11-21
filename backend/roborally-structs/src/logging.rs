@@ -6,17 +6,17 @@ pub use log::{error, info, warn};
 fn format(record: &Record) -> String {
     let cur_thread = thread::current();
     format!(
-        "{}({}) {}@{}: {}",
+        "[{:0<18}] {}({}) {}@{}: {}",
+        platform::get_time(),
         record.level(),
-        match cur_thread.name() {
-            Some(n) => format!("{}:{}", n, cur_thread.id().as_u64()),
-            None => cur_thread.id().as_u64().to_string(),
-        },
+        cur_thread.name().map_or_else(
+            || cur_thread.id().as_u64().to_string(),
+            |n| format!("{n}:{:0>2}", cur_thread.id().as_u64())
+        ),
         record.module_path().unwrap_or("<unknown module>"),
         record
             .line()
-            .map(|x| x.to_string())
-            .unwrap_or_else(|| "??".to_owned()),
+            .map_or_else(|| "??".to_owned(), |x| x.to_string()),
         record.args()
     )
 }
@@ -51,8 +51,12 @@ mod platform {
         fn flush(&self) {}
     }
 
-    pub(super) fn init() -> Result<(), SetLoggerError> {
+    pub fn init() -> Result<(), SetLoggerError> {
         log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Trace))
+    }
+
+    pub fn get_time() -> f64 {
+        js_sys::Date::now() / 1000.0
     }
 }
 
@@ -63,7 +67,7 @@ mod platform {
     static LOGGER: Logger = Logger;
 
     impl Log for Logger {
-        fn enabled(&self, metadata: &Metadata) -> bool {
+        fn enabled(&self, _metadata: &Metadata) -> bool {
             true
         }
 
@@ -77,14 +81,22 @@ mod platform {
         fn flush(&self) {}
     }
 
-    pub(super) fn init() -> Result<(), SetLoggerError> {
+    pub fn init() -> Result<(), SetLoggerError> {
         log::set_logger(&LOGGER).map(|()| set_max_level(LevelFilter::Debug))
+    }
+
+    pub fn get_time() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as f64
+            / 1_000_000_000.0
     }
 }
 
 pub fn init() {
     if let Err(e) = platform::init() {
-        let msg = format!("Error setting up logging: {}", e);
+        let msg = format!("Error setting up logging: {e}");
         #[cfg(feature = "server")]
         eprintln!("{}", &msg);
         #[cfg(feature = "client")]

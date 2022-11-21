@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type { AssetMap, PlayerGameStateView, Position } from "frontend-wasm";
+  import type { AssetMap, PlayerPublicState, Position } from "frontend-wasm";
   import robot from "./assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
   import { getTexture } from "./utils";
 
   export let map: AssetMap;
-  export let state: Pick<PlayerGameStateView, "players">;
+  export let players: Array<PlayerPublicState>;
+  export let player_names: Array<string>;
 
   let innerDiv: HTMLDivElement;
 
@@ -59,6 +60,10 @@
       });
     });
   }
+
+  export function handleCheckpointVisited(player_i: number) {
+    // TODO
+  }
 </script>
 
 <div class="outer">
@@ -78,7 +83,7 @@
           </div>
         {/each}
       {/each}
-      {#each state.players as player}
+      {#each players as player, i}
         {@const pos = player.position}
         <div
           class="robot"
@@ -87,8 +92,8 @@
           class:hidden={player.is_hidden}
         >
           <img src={robot} alt="Robot" style={player.style} />
-          {#if player.name !== undefined}
-            <div>{player.name}</div>
+          {#if player_names[i] !== undefined}
+            <div>{player_names[i]}</div>
           {/if}
         </div>
       {/each}
@@ -119,7 +124,7 @@
     padding: 0.1em 0.4em;
     border-radius: 0.2em;
     top: calc(var(--tile-size) * -0.12);
-    max-width: 6rem;
+    max-width: 6.1rem;
     overflow: hidden;
     text-overflow: ellipsis;
 

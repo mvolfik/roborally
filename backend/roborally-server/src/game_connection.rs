@@ -5,37 +5,52 @@ use roborally_structs::{
     logging::{error, info, warn},
     transport::{ClientMessage, ServerMessage},
 };
-use tokio::{sync::RwLock, time::timeout};
+use tokio::{
+    sync::mpsc::{unbounded_channel, UnboundedSender},
+    time::timeout,
+};
 use warp::ws::{Message, WebSocket};
 
-use crate::game::{Game, GamePhase};
+use crate::game::Game;
 
 #[derive(Debug)]
-pub struct SocketWriter(SplitSink<WebSocket, Message>);
-
-impl SocketWriter {
-    pub async fn close_with_notice(&mut self, msg: String) {
-        info!("Closing connection with message: {}", &msg);
-        if let Err(e) = self.0.send(Message::close_with(1000_u16, msg)).await {
-            warn!("Error when closing connection: {}", e);
-        }
-    }
-
-    pub async fn send_message(&mut self, msg: ServerMessage) {
-        if let Ok(vec) = rmp_serde::to_vec(&msg) {
-            if let Err(e) = self.0.send(Message::binary(vec)).await {
-                error!("Error sending message: {}", e);
-            }
-        }
-    }
+pub enum SocketMessage {
+    CloseWithNotice(String),
+    SendMessage(ServerMessage),
+    Ping,
 }
 
-#[derive(Debug)]
+pub fn create_sender(mut sink: SplitSink<WebSocket, Message>) -> UnboundedSender<SocketMessage> {
+    let (sender, mut receiver) = unbounded_channel();
+    tokio::task::spawn(async move {
+        while let Some(msg) = receiver.recv().await {
+            match msg {
+                SocketMessage::CloseWithNotice(notice) => {
+                    info!("Closing connection with message: {}", &notice);
+                    if let Err(e) = sink.send(Message::close_with(1000_u16, notice)).await {
+                        warn!("Error when closing connection: {e}");
+                    }
+                }
+                SocketMessage::SendMessage(m) => {
+                    if let Err(e) = sink
+                        .send(Message::binary(rmp_serde::to_vec(&m).unwrap()))
+                        .await
+                    {
+                        error!("Error sending message: {e}");
+                    }
+                }
+                SocketMessage::Ping => sink.send(Message::ping(vec![])).await.unwrap(),
+            }
+        }
+    });
+    sender
+}
+
 pub struct PlayerConnection {
     pub player_name: String,
-    pub game: Arc<RwLock<Game>>,
+    pub game: Arc<Game>,
     pub seat: usize,
-    pub socket: RwLock<SocketWriter>,
+    pub sender: UnboundedSender<SocketMessage>,
 }
 
 /// Attempts to receive a message
@@ -54,7 +69,7 @@ async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> +
         let ws_msg = match timeout(Duration::from_secs(20), reader.next()).await {
             Ok(Some(Ok(x))) => x,
             // various network errors
-            Ok(Some(Err(e))) => return Err(Some(format!("Error receiving message: {}", e))),
+            Ok(Some(Err(e))) => return Err(Some(format!("Error receiving message: {e}"))),
             // most likely: connection is already closed
             Ok(None) => return Err(None),
             // timeout
@@ -73,7 +88,7 @@ async fn receive_client_message<S: Stream<Item = Result<Message, warp::Error>> +
             } else if ws_msg.is_binary() {
                 match rmp_serde::from_slice(ws_msg.as_bytes()) {
                     Ok(msg) => Ok(msg),
-                    Err(e) => Err(Some(format!("Received corrupted message: {}", e))),
+                    Err(e) => Err(Some(format!("Received corrupted message: {e}"))),
                 }
             } else {
                 Err(Some("Received corrupted message (unknown type)".to_owned()))
@@ -89,69 +104,60 @@ impl PlayerConnection {
     ///
     /// Weak references to the `Arc` are stored in the game object, and in a ping keepalive loop
     pub async fn create_and_start(
-        game_opt: Option<Arc<RwLock<Game>>>,
+        game_opt: Option<Arc<Game>>,
         socket: WebSocket,
         player_name: String,
         seat: usize,
     ) {
+        use SocketMessage::*;
         let (w, mut reader) = socket.split();
-        let mut writer = SocketWriter(w);
-        let Some(game_lock) = game_opt
+        let sender = create_sender(w);
+        let Some(game) = game_opt
         else {
-            writer.close_with_notice("Game with this ID doesn't exist".to_owned()).await;
+            sender.send(CloseWithNotice("Game with this ID doesn't exist".to_owned())).unwrap();
             return;
         };
 
         let self_arc = {
-            let mut game = game_lock.write().await;
-            if let GamePhase::HasWinner(..) = game.phase {
-                writer
-                    .close_with_notice("This game has already finished".to_owned())
-                    .await;
-                return;
-            }
-            let Some(player) = game.players.get_mut(seat)
+            let mut state = game.state.write().unwrap();
+            let Some(player) = state.players.get_mut(seat)
             else {
-                writer.close_with_notice("There aren't that many seats".to_owned()).await;
-                return
+                drop(state);
+                sender.send(CloseWithNotice("There aren't that many seats".to_owned())).unwrap();
+                return;
             };
             if let Some(p) = player.connected.upgrade() {
-                writer
-                    .close_with_notice(format!(
+                drop(state);
+                sender
+                    .send(CloseWithNotice(format!(
                         "{} is already connected to this seat",
                         p.player_name
-                    ))
-                    .await;
+                    )))
+                    .unwrap();
                 return;
             }
 
             let conn = Arc::new(Self {
                 player_name,
-                game: Arc::clone(&game_lock),
+                game: Arc::clone(&game),
                 seat,
-                socket: RwLock::new(writer),
+                sender,
             });
             player.connected = Arc::downgrade(&conn);
-            game.send_single_state().await;
+            state.send_programming_state_to_player(seat);
+            state.send_general_state();
             conn
         };
-        let self_weak = Arc::downgrade(&self_arc);
 
+        let self_weak = Arc::downgrade(&self_arc);
         // ping loop
         tokio::spawn(async move {
             while let Some(ping_conn) = self_weak.upgrade() {
-                if let Err(e) = ping_conn
-                    .socket
-                    .write()
-                    .await
-                    .0
-                    .send(Message::ping([]))
-                    .await
-                {
-                    warn!("Error sending ping: {}", e);
+                if let Err(e) = ping_conn.sender.send(Ping) {
+                    warn!("Error sending ping: {e}");
                     break;
                 }
-                // free the Arc, only leave the weak_ref so that the seat is freed as soon as player disconnects
+                // free the Arc, only leave the Weak so that the seat is freed as soon as player disconnects
                 drop(ping_conn);
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
@@ -162,7 +168,7 @@ impl PlayerConnection {
             while let Some(msg) = match receive_client_message(&mut reader).await {
                 Err(err_opt) => {
                     if let Some(e) = err_opt {
-                        self_arc.socket.write().await.close_with_notice(e).await;
+                        self_arc.sender.send(CloseWithNotice(e)).unwrap();
                     }
                     None
                 }
@@ -170,27 +176,20 @@ impl PlayerConnection {
             } {
                 match msg {
                     ClientMessage::Program(cards) => {
-                        let res = self_arc
-                            .game
-                            .write()
-                            .await
-                            .program(self_arc.seat, cards)
-                            .await;
+                        let res = self_arc.game.program(self_arc.seat, cards).await;
                         if let Err(e) = res {
                             self_arc
-                                .socket
-                                .write()
-                                .await
-                                .send_message(ServerMessage::Notice(e))
-                                .await;
+                                .sender
+                                .send(SocketMessage::SendMessage(ServerMessage::Notice(e)))
+                                .unwrap();
                         }
                     }
                 }
             }
             info!("Ending receive loop for player {}", self_arc.player_name);
-            let game = Arc::clone(&self_arc.game);
+            let game_arc = Arc::clone(&self_arc.game);
             drop(self_arc);
-            game.write().await.send_single_state().await;
+            game_arc.state.read().unwrap().send_general_state();
         });
     }
 }

@@ -1,9 +1,9 @@
 FROM docker.io/library/rust:1-bullseye as rust-wasm-builder
 WORKDIR /builder
-RUN rustup override set nightly-2022-03-26
-RUN rustup target add --toolchain nightly-2022-03-26 wasm32-unknown-unknown
+RUN rustup override set nightly
+RUN rustup target add --toolchain nightly wasm32-unknown-unknown
 
-RUN cargo install --git https://github.com/mvolfik/wasm-pack --branch merged-1119-and-937
+RUN cargo install --git https://github.com/mvolfik/wasm-pack --branch master-plus-937
 
 RUN mkdir -p ./backend/roborally-structs/src \
              ./backend/roborally-frontend-wasm/src \
@@ -29,7 +29,7 @@ RUN cd backend/roborally-frontend-wasm && wasm-pack build --release --target web
 
 
 
-FROM docker.io/library/node:16 as node-builder
+FROM docker.io/library/node:18 as node-builder
 WORKDIR /builder
 
 COPY ./roborally-frontend/package.json ./roborally-frontend/yarn.lock ./roborally-frontend/
@@ -45,7 +45,7 @@ RUN cd roborally-frontend && yarn run build
 
 FROM docker.io/library/rust:1-bullseye as rust-server-builder
 WORKDIR /builder
-RUN rustup override set nightly-2022-03-26
+RUN rustup override set nightly
 
 RUN mkdir -p ./backend/roborally-structs/src \
              ./backend/roborally-frontend-wasm/src \
@@ -67,15 +67,14 @@ COPY ./backend/roborally-structs/src ./backend/roborally-structs/src
 RUN touch ./backend/roborally-structs/src/lib.rs
 COPY ./backend/roborally-server/src ./backend/roborally-server/src
 RUN touch ./backend/roborally-server/src/lib.rs
-COPY ./maps ./maps
 RUN cd backend && cargo build --release --locked -p roborally-server
 
 
 
 FROM docker.io/library/rust:1-bullseye as rust-server-builder-win
 WORKDIR /builder
-RUN rustup override set nightly-2022-03-26
-RUN rustup target add --toolchain nightly-2022-03-26 x86_64-pc-windows-gnu
+RUN rustup override set nightly
+RUN rustup target add --toolchain nightly x86_64-pc-windows-gnu
 RUN apt-get update && apt-get install -y gcc-mingw-w64-x86-64-win32 && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p ./backend/roborally-structs/src \
@@ -98,13 +97,13 @@ COPY ./backend/roborally-structs/src ./backend/roborally-structs/src
 RUN touch ./backend/roborally-structs/src/lib.rs
 COPY ./backend/roborally-server/src ./backend/roborally-server/src
 RUN touch ./backend/roborally-server/src/lib.rs
-COPY ./maps ./maps
 RUN cd backend && cargo build --release --locked -p roborally-server --target x86_64-pc-windows-gnu
 
 FROM debian:bullseye-slim as zipper
 WORKDIR /zipper
 RUN apt-get update && apt-get install -y zip && rm -rf /var/lib/apt/lists/*
 COPY --from=node-builder /builder/roborally-frontend/dist ./roborally-mvolf/www
+COPY ./backend/maps ./roborally-mvolf/maps
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./roborally-mvolf/
 RUN tar -czvf roborally-dist-linux.tar.gz roborally-mvolf && rm ./roborally-mvolf/roborally-server
 COPY --from=rust-server-builder-win /builder/backend/target/x86_64-pc-windows-gnu/release/roborally-server.exe ./roborally-mvolf/
@@ -116,6 +115,7 @@ WORKDIR /app
 COPY --from=rust-server-builder /builder/backend/target/release/roborally-server ./
 COPY --from=node-builder /builder/roborally-frontend/dist ./www
 COPY --from=zipper /zipper/roborally-dist-linux.tar.gz /zipper/roborally-dist-windows.zip ./www/
+COPY ./backend/maps ./maps
 COPY ./source-code.tar.gz ./source-code.zip ./www/
 
 CMD ["./roborally-server"]

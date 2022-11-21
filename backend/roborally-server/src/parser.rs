@@ -23,7 +23,7 @@ fn checked_split_in_two<'a, T: std::str::pattern::Pattern<'a>>(
 }
 
 fn format_parse_error(name: &str, message: &str, value: &str) -> ParseError {
-    ParseError(format!("Error parsing {}: {}: `{}`", name, message, value))
+    ParseError(format!("Error parsing {name}: {message}: `{value}`"))
 }
 
 #[derive(Debug)]
@@ -36,6 +36,7 @@ pub trait Parse: Sized {
 trait SupportedNum: FromStr {}
 impl SupportedNum for i16 {}
 impl SupportedNum for u8 {}
+impl SupportedNum for usize {}
 
 impl<T: SupportedNum> Parse for T {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
@@ -48,8 +49,8 @@ impl Parse for Position {
         let (x_str, y_str) = checked_split_in_two(value, ',')
             .ok_or_else(|| format_parse_error(name, "expected format `x,y`", value))?;
         Ok(Self {
-            x: i16::parse(x_str, &format!("{}.x", name))?,
-            y: i16::parse(y_str, &format!("{}.x", name))?,
+            x: i16::parse(x_str, &format!("{name}.x"))?,
+            y: i16::parse(y_str, &format!("{name}.x"))?,
         })
     }
 }
@@ -79,8 +80,8 @@ impl Parse for (Position, Direction) {
             format_parse_error(name, "expected format `{{position}}:{{direction}}`", value)
         })?;
         Ok((
-            Position::parse(pos, &format!("{}.position", name))?,
-            Direction::parse(dir, &format!("{}.direction", name))?,
+            Position::parse(pos, &format!("{name}.position"))?,
+            Direction::parse(dir, &format!("{name}.direction"))?,
         ))
     }
 }
@@ -93,15 +94,15 @@ impl<T: Parse> Parse for Vec<T> {
             value
                 .split(';')
                 .enumerate()
-                .map(|(i, item)| T::parse(item, &format!("{}[{}]", name, i)))
+                .map(|(i, item)| T::parse(item, &format!("{name}[{i}]")))
                 .collect()
         }
     }
 }
 
-impl Parse for [bool; 5] {
+impl Parse for Vec<bool> {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
-        let mut res = [false; 5];
+        let mut res = Vec::new();
         let mut last_digit = 0;
         for c in value.chars() {
             match c.to_digit(10) {
@@ -123,10 +124,7 @@ impl Parse for [bool; 5] {
 }
 
 fn char_option_to_string(c_opt: Option<char>) -> String {
-    match c_opt {
-        Some(c) => c.to_string(),
-        None => String::new(),
-    }
+    c_opt.map_or_else(String::new, |c| c.to_string())
 }
 
 impl Parse for TileType {
@@ -142,21 +140,38 @@ impl Parse for TileType {
                     c == 'f',
                     Direction::parse(
                         &char_option_to_string(chars.next()),
-                        &format!("{}.direction", name),
+                        &format!("{name}.direction"),
                     )?,
                 ),
                 Some(_) => return Err(format_parse_error(name, "invalid belt type", value)),
             },
-            Some('P') => PushPanel(
-                Direction::parse(
+            Some('P') => {
+                let direction = Direction::parse(
                     &char_option_to_string(chars.next()),
-                    &format!("{}.direction", name),
-                )?,
-                <[bool; 5]>::parse(
-                    &chars.by_ref().collect::<String>(),
-                    &format!("{}.active-rounds", name),
-                )?,
-            ),
+                    &format!("{name}.direction"),
+                )?;
+                let remainder = chars.by_ref().collect::<String>();
+                let (divisor, remainder) =
+                    checked_split_in_two(&remainder, "+").ok_or_else(|| {
+                        format_parse_error(
+                            name,
+                            "expected format `P{{direction}}{{divisor}}+{{remainder}}`",
+                            value,
+                        )
+                    })?;
+                if remainder >= divisor {
+                    return Err(format_parse_error(
+                        name,
+                        "remainder must be less than divisor",
+                        value,
+                    ));
+                }
+                PushPanel(
+                    direction,
+                    usize::parse(divisor, &format!("{name}.divisor"))?,
+                    usize::parse(remainder, &format!("{name}.remainder"))?,
+                )
+            }
             Some('R') => match chars.by_ref().collect::<String>().as_ref() {
                 "cw" => Rotation(true),
                 "ccw" => Rotation(false),
@@ -215,7 +230,7 @@ impl Parse for Tile {
         let mut split = value.split(':');
         let typ = TileType::parse(split.next().unwrap(), name)?;
         let walls = if let Some(wallspec) = split.next() {
-            DirectionBools::parse(wallspec, &format!("{}.walls", name))?
+            DirectionBools::parse(wallspec, &format!("{name}.walls"))?
         } else {
             DirectionBools::default()
         };
@@ -232,6 +247,13 @@ impl Parse for Tile {
     }
 }
 
+impl Parse for String {
+    fn parse(value: &str, _name: &str) -> Result<Self, ParseError> {
+        Ok(value.to_owned())
+    }
+}
+
+#[allow(clippy::type_complexity)]
 /// Utility function to reduce repetition when extracting props from map header
 fn get_parsed_prop<T: Parse>(
     props: &mut HashMap<&str, &str>,
@@ -242,7 +264,7 @@ fn get_parsed_prop<T: Parse>(
     let s = props
         .remove(propname)
         .ok_or_else(|| format_parse_error(basename, "missing required prop", propname))?;
-    let prop_fullname = &format!("{}.props.{}", basename, propname);
+    let prop_fullname = &format!("{basename}.props.{propname}");
     let val = T::parse(s, prop_fullname)?;
     for (ver_fn, err_msg) in verifications.iter_mut() {
         if !ver_fn(&val) {
@@ -253,17 +275,21 @@ fn get_parsed_prop<T: Parse>(
 }
 
 /// First line is a header:
+/// ```raw
 /// header : {prop}( {prop})*
 /// prop   : Size={pos} | Antenna={pos} | Reboot={pos}:{dir} | Checkpoints=[{pos}];+ | Spawnpoints=[{pos}:{dir}];+
 /// pos    : <x>,<y>
 /// dir    : u | r | d | l
+/// ```
 ///
 /// Then follow Size.y remaining lines
 impl Parse for GameMap {
+    #[allow(clippy::too_many_lines)]
     fn parse(value: &str, name: &str) -> Result<Self, ParseError> {
         let mut lines = value.lines();
         // return Err(format_parse_error("foo", "bar", lines.next().unwrap()));
 
+        let map_name: String;
         let antenna: Position;
         let reboot_token: (Position, Direction);
         let checkpoints: Vec<Position>;
@@ -299,7 +325,7 @@ impl Parse for GameMap {
         let tile_lines: Vec<Vec<Tile>> = lines
             .enumerate()
             .map(|(i, line)| {
-                let line_name = &format!("{}.lines[{}]", name, i);
+                let line_name = &format!("{name}.lines[{i}]");
                 let line_tiles = <Vec<Tile>>::parse(line, line_name)?;
                 if line_tiles.len() == size.x as usize {
                     Ok(line_tiles)
@@ -321,7 +347,7 @@ impl Parse for GameMap {
             ));
         }
         let tiles = Grid::new(tile_lines.into_iter().flatten().collect(), size)
-            .map_err(|e| format_parse_error(name, &e, &format!("{:?}", size)))?;
+            .map_err(|e| format_parse_error(name, &e, &format!("{size:?}")))?;
 
         {
             let mut is_in_bounds = |p: &Position| size.contains(*p);
@@ -336,6 +362,25 @@ impl Parse for GameMap {
 
             let mut used_special_tiles: HashSet<Position> = HashSet::new();
             let mut doesnt_overlap_other_special = |p: &Position| used_special_tiles.insert(*p);
+
+            map_name = get_parsed_prop(
+                &mut props,
+                name,
+                "Name",
+                &mut [
+                    (
+                        &mut |s: &String| s.len() <= 20 && s.len() >= 3,
+                        "map name must be 3-20 characters long",
+                    ),
+                    (
+                        &mut |s: &String| {
+                            s.chars()
+                                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                        },
+                        "map name can only contain [a-zA-Z0-9_-]",
+                    ),
+                ],
+            )?;
 
             antenna = get_parsed_prop(
                 &mut props,
@@ -437,6 +482,20 @@ impl Parse for GameMap {
                     ),
                 ],
             )?;
+            let mut rebooting_position = reboot_token.0;
+            for i in 0..spawn_points.len() {
+                rebooting_position = rebooting_position.moved_in_direction(reboot_token.1);
+                if !tiles
+                    .get(rebooting_position)
+                    .is_some_and(|t| t.typ != TileType::Void)
+                {
+                    return Err(format_parse_error(
+                        name,
+                        &format!("the reboot token must point to a strip of non-void tiles for each player (only found {})", i+1),
+                        &format!("{reboot_token:?}"),
+                    ));
+                }
+            }
 
             lasers = get_parsed_prop(
                 &mut props,
@@ -470,7 +529,7 @@ impl Parse for GameMap {
                     "extra props in header",
                     &props
                         .into_iter()
-                        .map(|(k, v)| format!("{}: `{}`", k, v))
+                        .map(|(k, v)| format!("{k}: `{v}`"))
                         .intersperse(", ".to_owned())
                         .collect::<String>(),
                 ));
@@ -478,6 +537,7 @@ impl Parse for GameMap {
         }
 
         Ok(Self {
+            name: map_name,
             tiles,
             antenna,
             reboot_token,

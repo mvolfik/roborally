@@ -6,10 +6,11 @@ macro_rules! create_array_type {
             #[::wasm_bindgen::prelude::wasm_bindgen(typescript_type = $full_js_type )]
             pub type $name;
         }
-        impl $name {
-            pub fn from_iter<T: Iterator<Item = $rust_inner_type>>(iter: T) -> Self {
+        impl FromIterator<$rust_inner_type> for $name {
+            fn from_iter<T: IntoIterator<Item = $rust_inner_type>>(iter: T) -> Self {
                 use ::wasm_bindgen::JsCast;
-                iter.map(::wasm_bindgen::JsValue::from)
+                iter.into_iter()
+                    .map(::wasm_bindgen::JsValue::from)
                     .collect::<::js_sys::Array>()
                     .unchecked_into()
             }

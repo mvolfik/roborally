@@ -1,98 +1,109 @@
 use crate::{
-    animations::Animation, card::Card, game_state::PlayerGameStateView, position::Direction,
+    card::Card,
+    game_state::{animated_state::AnimationItem, GeneralState, ProgrammingState},
 };
 
 use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "client")]
-use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
-
-#[cfg_attr(feature = "server", derive(Serialize))]
-#[cfg_attr(feature = "client", derive(Deserialize), wasm_bindgen)]
-#[derive(Debug, Clone)]
-/// Item in array of states played as an animated sequence during Moving phase
-pub struct StateArrayItem {
-    state: Option<PlayerGameStateView>,
-    animations: Vec<Animation>,
-}
-
-#[cfg(feature = "server")]
-impl StateArrayItem {
-    pub fn new(state: Option<PlayerGameStateView>, animations: Vec<Animation>) -> Self {
-        Self { state, animations }
-    }
-}
-
-#[cfg(feature = "client")]
-#[wasm_bindgen]
-extern "C" {
-    // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
-    #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
-    /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
-    pub type ProcessBulletClosure;
-
-    #[wasm_bindgen(typescript_type = "(player_i: number) => void")]
-    pub type ClosurePlayerI;
-}
-
-#[cfg(feature = "client")]
-#[wasm_bindgen]
-impl StateArrayItem {
-    #[wasm_bindgen(getter)]
-    pub fn state(&self) -> Option<PlayerGameStateView> {
-        self.state.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn has_state(&self) -> bool {
-        self.state.is_some()
-    }
-
-    pub fn process_animations(
-        &self,
-        process_bullet_closure: ProcessBulletClosure,
-    ) -> Result<(), JsValue> {
-        let process_bullet_jsfunc = process_bullet_closure.unchecked_into::<js_sys::Function>();
-        for animation in &self.animations {
-            match animation {
-                Animation::BulletFlight {
-                    from,
-                    to,
-                    direction,
-                    is_from_tank,
-                } => {
-                    let args: [JsValue; 4] = [
-                        (*from).into(),
-                        (*to).into(),
-                        match direction {
-                            Direction::Up => 0_u8,
-                            Direction::Right => 1,
-                            Direction::Down => 2,
-                            Direction::Left => 3,
-                        }
-                        .into(),
-                        (*is_from_tank).into(),
-                    ];
-                    process_bullet_jsfunc
-                        .apply(&JsValue::UNDEFINED, &args.into_iter().collect())?;
-                }
-            };
-        }
-        Ok(())
-    }
-}
 
 #[cfg_attr(feature = "server", derive(Serialize))]
 #[cfg_attr(feature = "client", derive(Deserialize))]
 #[derive(Debug, Clone)]
 pub enum ServerMessage {
-    State(PlayerGameStateView),
     Notice(String),
-    AnimatedStates(Vec<StateArrayItem>),
+    GameLog(String),
+    GeneralState(GeneralState),
+    ProgrammingState(ProgrammingState),
+    AnimatedState(AnimationItem),
+}
+
+#[cfg(feature = "client")]
+pub mod wrapper {
+    use wasm_bindgen::prelude::wasm_bindgen;
+
+    use crate::game_state::{animated_state::AnimationItem, GeneralState, ProgrammingState};
+
+    use super::ServerMessage;
+
+    #[wasm_bindgen]
+    pub enum ServerMessageType {
+        Notice,
+        GameLog,
+        GeneralState,
+        ProgrammingState,
+        AnimatedState,
+    }
+
+    #[wasm_bindgen(skip_all)]
+    pub struct ServerMessageWrapper(pub ServerMessage);
+
+    #[wasm_bindgen]
+    impl ServerMessageWrapper {
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn typ(&self) -> ServerMessageType {
+            match &self.0 {
+                ServerMessage::Notice(_) => ServerMessageType::Notice,
+                ServerMessage::GameLog(_) => ServerMessageType::GameLog,
+                ServerMessage::GeneralState(_) => ServerMessageType::GeneralState,
+                ServerMessage::ProgrammingState(_) => ServerMessageType::ProgrammingState,
+                ServerMessage::AnimatedState(_) => ServerMessageType::AnimatedState,
+            }
+        }
+
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn notice(&self) -> String {
+            if let ServerMessage::Notice(s) = &self.0 {
+                s.clone()
+            } else {
+                panic!("Tried to get notice from different message type");
+            }
+        }
+
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn game_log(&self) -> String {
+            if let ServerMessage::GameLog(s) = &self.0 {
+                s.clone()
+            } else {
+                panic!("Tried to get game_log from different message type");
+            }
+        }
+
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn general_state(&self) -> GeneralState {
+            if let ServerMessage::GeneralState(s) = &self.0 {
+                s.clone()
+            } else {
+                panic!("Tried to get general_state from different message type");
+            }
+        }
+
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn programming_state(&self) -> ProgrammingState {
+            if let ServerMessage::ProgrammingState(s) = &self.0 {
+                s.clone()
+            } else {
+                panic!("Tried to get programming_state from different message type");
+            }
+        }
+
+        #[wasm_bindgen(getter)]
+        #[must_use]
+        pub fn animated_state(&self) -> AnimationItem {
+            if let ServerMessage::AnimatedState(s) = &self.0 {
+                s.clone()
+            } else {
+                panic!("Tried to get animated_state from different message type");
+            }
+        }
+    }
 }
 
 #[cfg_attr(feature = "server", derive(Deserialize, Debug))]
 #[cfg_attr(feature = "client", derive(Serialize))]
 pub enum ClientMessage {
-    Program([Card; 5]),
+    Program(Vec<Card>),
 }

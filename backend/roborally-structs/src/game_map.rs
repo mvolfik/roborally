@@ -8,6 +8,7 @@ use crate::{
 #[derive(Clone, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
 pub struct GameMap {
+    pub name: String,
     pub tiles: Grid<Tile>,
     pub antenna: Position,
     pub reboot_token: (Position, Direction),

@@ -23,7 +23,7 @@ impl std::fmt::Display for Effects {
         if !self.rotate.is_none() {
             write!(f, "rotate({}deg)", self.rotate.get_rotation())?;
         }
-        if self.scale != 1.0 {
+        if self.scale - 1.0 < 0.0001 {
             let trans = (self.scale - 1.0) * 32.0;
             write!(
                 f,
@@ -53,15 +53,13 @@ impl std::fmt::Display for Effects {
                 .to_items()
                 .into_iter()
                 .filter_map(|(dir, is_shown)| {
-                    if is_shown {
-                        Some(format!(
+                    is_shown.then(|| {
+                        format!(
                             "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
                             if self.flip_x { -1 } else { 1 }
                                 * (dir.to_continuous() - self.rotate).get_rotation()
-                        ))
-                    } else {
-                        None
-                    }
+                        )
+                    })
                 })
                 .intersperse_with(|| ",".to_owned())
                 .collect::<String>();
@@ -94,6 +92,7 @@ impl Default for Effects {
 
 #[cfg(feature = "client")]
 impl Effects {
+    #[must_use]
     pub fn random_rotate_flip() -> Self {
         let rotate_rand = js_sys::Math::random();
         let flip_rand = js_sys::Math::random();

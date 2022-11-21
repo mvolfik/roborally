@@ -1,16 +1,25 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
 
   const eventSource = createEventDispatcher();
   export let closeLabel = "Close";
   export let title: string;
+
+  let button: HTMLButtonElement;
+  onMount(() => {
+    button.focus();
+  });
 </script>
 
 <div class="backdrop" on:click|self={() => eventSource("close")}>
   <div class="dialog">
     <div class="header">
       <p>{title}</p>
-      <p><button on:click={() => eventSource("close")}>{closeLabel}</button></p>
+      <p>
+        <button bind:this={button} on:click={() => eventSource("close")}
+          >{closeLabel}</button
+        >
+      </p>
     </div>
     <slot />
   </div>

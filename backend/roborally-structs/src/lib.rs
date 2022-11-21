@@ -1,7 +1,11 @@
 #![warn(clippy::nursery)]
 #![allow(clippy::use_self)]
+#![allow(clippy::missing_const_for_fn)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::unused_unit)]
 #![allow(clippy::missing_errors_doc)]
@@ -23,10 +27,11 @@
 #![warn(clippy::string_to_string)]
 #![warn(clippy::try_err)]
 // features
-#![feature(pattern)]
+#![feature(concat_idents)]
 #![feature(const_precise_live_drops)]
-#![feature(thread_id_value)]
 #![feature(iter_intersperse)]
+#![feature(pattern)]
+#![feature(thread_id_value)]
 
 pub mod animations;
 pub mod card;
@@ -39,3 +44,6 @@ pub mod tile_type;
 pub mod transform;
 pub mod transport;
 pub mod utils;
+
+#[cfg(feature = "client")]
+pub use wasm_bindgen;

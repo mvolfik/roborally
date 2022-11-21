@@ -32,13 +32,13 @@ impl Asset {
 }
 
 #[wasm_bindgen]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TileAssets(Vec<Asset>);
 
 #[wasm_bindgen]
 impl TileAssets {
     pub fn into_jsarray(self) -> AssetArray {
-        AssetArray::from_iter(self.0.iter().cloned())
+        self.0.iter().cloned().collect()
     }
 }
 
@@ -52,8 +52,11 @@ pub struct AssetMap {
 
 #[wasm_bindgen]
 impl AssetMap {
-    pub fn get(&self, x: i16, y: i16) -> Option<TileAssets> {
-        self.grid.get(Position { x, y }).cloned()
+    pub fn get(&self, x: i16, y: i16) -> TileAssets {
+        self.grid
+            .get(Position { x, y })
+            .cloned()
+            .unwrap_or_default()
     }
     #[wasm_bindgen(getter)]
     pub fn width(&self) -> i16 {
@@ -66,6 +69,7 @@ impl AssetMap {
 }
 
 #[allow(clippy::fallible_impl_from)]
+#[allow(clippy::too_many_lines)]
 impl From<GameMap> for AssetMap {
     fn from(m: GameMap) -> Self {
         let size = m.tiles.size();
@@ -173,28 +177,29 @@ impl From<GameMap> for AssetMap {
                                 },
                             }
                         ],
-                        PushPanel(dir, active_rounds) => {
-                            let mut assets = vec![Asset {
+                        PushPanel(dir, _div, _remainder) => {
+                            let assets = vec![Asset {
                                 uri: "push-panel.png".to_owned(),
                                 effects: Effects {
                                     rotate: dir.to_continuous(),
                                     ..Effects::default()
                                 },
                             }];
-                            for (i, is_active) in active_rounds.iter().enumerate() {
-                                #[allow(clippy::cast_precision_loss)]
-                                assets.push(Asset {
-                                    uri: format!(
-                                        "push-panel-indicator-{}.png",
-                                        if *is_active { "active" } else { "inactive" }
-                                    ),
-                                    effects: Effects {
-                                        translate: Some(((2 + i * 12) as f64, 35.0)),
-                                        rotate: dir.to_continuous(),
-                                        ..Effects::default()
-                                    },
-                                });
-                            }
+                            // for (i, is_active) in active_rounds.iter().enumerate() {
+                            //     #[allow(clippy::cast_precision_loss)]
+                            //     assets.push(Asset {
+                            //         uri: format!(
+                            //             "push-panel-indicator-{}.png",
+                            //             if *is_active { "active" } else { "inactive" }
+                            //         ),
+                            //         effects: Effects {
+                            //             translate: Some(((2 + i * 12) as f64, 35.0)),
+                            //             rotate: dir.to_continuous(),
+                            //             ..Effects::default()
+                            //         },
+                            //     });
+                            // }
+                            // TODO ^^
                             assets
                         }
                     };
