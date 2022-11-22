@@ -15,4 +15,8 @@ pub enum Animation {
     CheckpointVisited {
         player_i: usize,
     },
+    AttemptedMove {
+        player_i: usize,
+        direction: Direction,
+    },
 }

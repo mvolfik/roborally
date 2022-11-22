@@ -82,7 +82,8 @@
     const item = stateArray[++stateIndicator];
     item.process_animations(
       mapComponent.handleBullet,
-      mapComponent.handleCheckpointVisited
+      mapComponent.handleCheckpointVisited,
+      mapComponent.handleAttemptedMove
     );
 
     if (item.has_state) {

@@ -1,6 +1,11 @@
 <script lang="ts">
   import "@fontsource/vt323";
-  import type { AssetMap, PlayerPublicState, Position } from "frontend-wasm";
+  import {
+    Direction,
+    type AssetMap,
+    type PlayerPublicState,
+    type Position,
+  } from "frontend-wasm";
   import robot from "./assets/robot.png?url";
   import Zoomable from "svelte-layer-zoomable";
   import { getTexture } from "./utils";
@@ -16,7 +21,7 @@
   export function handleBullet(
     from: Position,
     to: Position,
-    direction: 0 | 1 | 2 | 3,
+    direction: Direction,
     isFromTank: boolean
   ) {
     let fromX = from.x;
@@ -65,7 +70,7 @@
 
   export function handleCheckpointVisited(player_i: number) {
     const el = innerDiv.querySelectorAll(".robot")[player_i];
-    const ani = el.animate(
+    el.animate(
       [
         { scale: 1, offset: 0 },
         { scale: 1.8, offset: 0.5 },
@@ -74,6 +79,33 @@
       {
         duration: animationDuration,
         easing: "linear",
+      }
+    );
+  }
+
+  export function handleAttemptedMove(player_i: number, direction: Direction) {
+    const el = innerDiv.querySelectorAll(".robot")[player_i];
+    const translate = (
+      direction === Direction.Up
+        ? "0 -X"
+        : direction === Direction.Right
+        ? "X 0"
+        : direction === Direction.Down
+        ? "0 X"
+        : "-X 0"
+    )
+      .replace("-X", "calc(var(--tile-size) / -2)")
+      .replace("X", "calc(var(--tile-size) / 2)");
+    el.animate(
+      [
+        { translate: "0 0", offset: 0 },
+        { translate, offset: 0.5 },
+        { translate: "0 0", offset: 1 },
+      ],
+      {
+        duration: animationDuration,
+        easing: "ease-out",
+        id: `player-bounce-${player_i}`,
       }
     );
   }

@@ -157,7 +157,11 @@ impl GameState {
         result
     }
 
-    pub fn mov(&mut self, player_i: usize, direction: impl Into<Direction>) -> MoveResult {
+    pub fn mov(
+        &mut self,
+        player_i: usize,
+        direction: impl Into<Direction>,
+    ) -> (MoveResult, Vec<Animation>) {
         let map = &self.game.upgrade().unwrap().map;
         let player = &mut self.players[player_i];
         let origin_pos = player.public_state.position;
@@ -168,19 +172,28 @@ impl GameState {
                 typ: TileType::Void,
                 ..
             }) => {
-                return MoveResult {
-                    moved: true,
-                    rebooted: false,
-                }
+                return (
+                    MoveResult {
+                        moved: true,
+                        rebooted: false,
+                    },
+                    Vec::new(),
+                )
             }
             Some(t) => t,
         };
         let direction = direction.into();
         if origin_tile.walls.get(direction) {
-            return MoveResult {
-                moved: false,
-                rebooted: false,
-            };
+            return (
+                MoveResult {
+                    moved: false,
+                    rebooted: false,
+                },
+                vec![Animation::AttemptedMove {
+                    player_i,
+                    direction,
+                }],
+            );
         }
         let target_pos = origin_pos.moved_in_direction(direction);
         let Some(target_tile) = map.tiles.get(target_pos)
@@ -188,36 +201,59 @@ impl GameState {
             // falling out of map
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return MoveResult { moved: true, rebooted: true };
+            return (MoveResult { moved: true, rebooted: true }, Vec::new());
         };
         if target_tile.walls.get(direction.rotated().rotated()) {
-            return MoveResult {
-                moved: false,
-                rebooted: false,
-            };
+            return (
+                MoveResult {
+                    moved: false,
+                    rebooted: false,
+                },
+                vec![Animation::AttemptedMove {
+                    player_i,
+                    direction,
+                }],
+            );
         }
         if target_tile.typ == TileType::Void {
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return MoveResult {
-                moved: true,
-                rebooted: true,
-            };
+            return (
+                MoveResult {
+                    moved: true,
+                    rebooted: true,
+                },
+                Vec::new(),
+            );
         }
 
-        if let Some(player2_i) = self.player_at_position(target_pos) {
-            if !self.mov(player2_i, direction).moved {
-                return MoveResult {
-                    moved: false,
-                    rebooted: false,
-                };
+        let animations = if let Some(player2_i) = self.player_at_position(target_pos) {
+            let (res, mut animations) = self.mov(player2_i, direction);
+            if !res.moved {
+                animations.push(Animation::AttemptedMove {
+                    player_i,
+                    direction,
+                });
+                return (
+                    MoveResult {
+                        moved: false,
+                        rebooted: false,
+                    },
+                    animations,
+                );
             }
-        }
+            animations
+        } else {
+            Vec::new()
+        };
         self.players[player_i].public_state.position = target_pos;
-        MoveResult {
-            moved: true,
-            rebooted: false,
-        }
+        (
+            MoveResult {
+                moved: true,
+                rebooted: false,
+            },
+            animations,
+        )
     }
 
     pub fn force_move_to(
@@ -262,11 +298,11 @@ impl GameState {
     /// Hide all players that should reboot, queue a state update, then move them one by one to the reboot token
     ///
     /// This should typically be called directly after a move, without any intermediate state updates
-    pub fn execute_reboots(&mut self) {
+    pub fn execute_reboots(&mut self, animations: &[Animation]) {
         for player_i in &self.reboot_queue {
             self.players[*player_i].public_state.is_hidden = true;
         }
-        self.send_animation_item(&[], true);
+        self.send_animation_item(animations, true);
 
         let game = self.game.upgrade().unwrap();
         let reboot_token = game.map.reboot_token;
@@ -348,6 +384,7 @@ impl GameState {
                 .push((player_i, player_dir));
         }
 
+        let mut animations = Vec::new();
         loop {
             let mut made_changes = false;
             for (position, players) in mem::take(&mut moved_positions) {
@@ -364,6 +401,16 @@ impl GameState {
                     // -> those that were attempted to be moved by a belt are reset, the rest stay
                     for (player_i, _) in players {
                         let player_state = &self.players[player_i].public_state;
+                        if player_state.position != position {
+                            let Some(Tile {
+                                typ: TileType::Belt(_, direction),
+                                ..
+                            }) = game.map.tiles.get(player_state.position) else { unreachable!() };
+                            animations.push(Animation::AttemptedMove {
+                                player_i,
+                                direction: *direction,
+                            });
+                        }
                         moved_positions
                             .entry(player_state.position)
                             .or_default()
@@ -403,8 +450,8 @@ impl GameState {
         to_reboot.sort_by_key(|(_, pos)| Priority::new(*pos, game.map.antenna));
         self.reboot_queue
             .extend(to_reboot.into_iter().map(|(player_i, _)| player_i));
-        if any_moved {
-            self.execute_reboots();
+        if any_moved || !animations.is_empty() {
+            self.execute_reboots(&animations);
         }
     }
 
@@ -414,8 +461,8 @@ impl GameState {
             let pos = self.players[player_i].public_state.position;
             if let TileType::PushPanel(dir, divisor, remainder) = map.tiles.get(pos).unwrap().typ {
                 if (register_i + 1) % divisor == remainder {
-                    self.mov(player_i, dir);
-                    self.execute_reboots();
+                    let (_, animations) = self.mov(player_i, dir);
+                    self.execute_reboots(&animations);
                 }
             }
         }

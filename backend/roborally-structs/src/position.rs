@@ -86,6 +86,7 @@ impl PartialOrd for Priority {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[cfg_attr(feature = "server", derive(Serialize))]
+#[cfg_attr(feature = "client", wasm_bindgen)]
 pub enum Direction {
     Up,
     Right,

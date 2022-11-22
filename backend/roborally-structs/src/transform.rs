@@ -20,9 +20,8 @@ pub struct Effects {
 impl std::fmt::Display for Effects {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "transform:")?;
-        if !self.rotate.is_none() {
-            write!(f, "rotate({}deg)", self.rotate.get_rotation())?;
-        }
+        write!(f, "rotate({}deg)", self.rotate.get_rotation())?;
+
         if (self.scale - 1.0).abs() > 0.0001 {
             let trans = (self.scale - 1.0) * 32.0;
             write!(

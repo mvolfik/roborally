@@ -16,8 +16,8 @@ pub mod game_api {
         if player_i as usize >= game.players.len() {
             return Err("There aren't that many players".into());
         }
-        let res = game.mov(player_i as usize, direction);
-        game.execute_reboots();
+        let (res, animations) = game.mov(player_i as usize, direction);
+        game.execute_reboots(&animations);
         Ok(res)
     }
 
@@ -33,7 +33,7 @@ pub mod game_api {
             return Err("There aren't that many players".into());
         }
         let res = game.force_move_to(player_i as usize, pos, pushing_direction.into());
-        game.execute_reboots();
+        game.execute_reboots(&[]);
         Ok(res)
     }
 

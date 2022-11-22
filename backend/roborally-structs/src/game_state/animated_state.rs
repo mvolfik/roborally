@@ -1,4 +1,4 @@
-use crate::{animations::Animation, card::Card, create_array_type, position::Direction};
+use crate::{animations::Animation, card::Card, create_array_type};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "client")]
@@ -29,16 +29,16 @@ pub struct RunningStateView {
 #[cfg(feature = "client")]
 #[wasm_bindgen]
 extern "C" {
-    // due to some weird bug in wasm-bindgen, compilation fails with longer argument names here
-    #[wasm_bindgen(typescript_type = "(f: Position, t: Position, d: number, x: boolean) => void")]
-    /// somehow enum.into::<JsValue>() isn't supported, so we use a flag 0..3=[Up Right Down Left] for direction
+    #[wasm_bindgen(
+        typescript_type = "(from: Position, to: Position, direction: Direction, is_from_tank: boolean) => void"
+    )]
     pub type ProcessBulletClosure;
 
     #[wasm_bindgen(typescript_type = "(player_i: number) => void")]
     pub type ProcessCheckpointVisitedClosure;
 
-    #[wasm_bindgen(typescript_type = "(player_i: number) => void")]
-    pub type ClosurePlayerI;
+    #[wasm_bindgen(typescript_type = "(player_i: number, direction: Direction) => void")]
+    pub type ProcessAttemptedMoveClosure;
 }
 
 #[derive(Clone, Debug)]
@@ -61,10 +61,13 @@ impl AnimationItem {
         &self,
         process_bullet_closure: ProcessBulletClosure,
         process_checkpoint_visited_closure: ProcessCheckpointVisitedClosure,
+        process_attempted_move_closure: ProcessAttemptedMoveClosure,
     ) -> Result<(), JsValue> {
         let process_bullet_jsfunc = process_bullet_closure.unchecked_into::<js_sys::Function>();
         let process_checkpoint_visited_jsfunc =
             process_checkpoint_visited_closure.unchecked_into::<js_sys::Function>();
+        let process_attempted_move_jsfunc =
+            process_attempted_move_closure.unchecked_into::<js_sys::Function>();
         for animation in &self.animations {
             match animation {
                 Animation::BulletFlight {
@@ -76,13 +79,7 @@ impl AnimationItem {
                     let args: [JsValue; 4] = [
                         (*from).into(),
                         (*to).into(),
-                        match direction {
-                            Direction::Up => 0_u8,
-                            Direction::Right => 1,
-                            Direction::Down => 2,
-                            Direction::Left => 3,
-                        }
-                        .into(),
+                        (*direction).into(),
                         (*is_from_tank).into(),
                     ];
                     process_bullet_jsfunc
@@ -91,6 +88,16 @@ impl AnimationItem {
                 Animation::CheckpointVisited { player_i } => {
                     process_checkpoint_visited_jsfunc
                         .call1(&JsValue::UNDEFINED, &(*player_i as u8).into())?;
+                }
+                Animation::AttemptedMove {
+                    player_i,
+                    direction,
+                } => {
+                    process_attempted_move_jsfunc.call2(
+                        &JsValue::UNDEFINED,
+                        &(*player_i).into(),
+                        &(*direction).into(),
+                    )?;
                 }
             };
         }
