@@ -1,4 +1,4 @@
-use std::{iter::repeat, mem, sync::Weak};
+use std::{iter::repeat, mem};
 
 use rand::{seq::SliceRandom, thread_rng};
 use roborally_structs::{
@@ -8,7 +8,7 @@ use roborally_structs::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{game::CardInitializationDefinition, game_connection::PlayerConnection};
+use crate::{game::CardInitializationDefinition};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Player {
@@ -16,8 +16,6 @@ pub struct Player {
     draw_pile: Vec<Card>,
     pub hand: Vec<Card>,
     pub discard_pile: Vec<Card>,
-    #[serde(skip)]
-    pub connected: Weak<PlayerConnection>,
     pub prepared_cards: Option<Vec<Card>>,
 }
 
@@ -44,7 +42,6 @@ impl Player {
                 .flat_map(|(i, definition)| repeat(Card::Custom(i)).take(definition.count))
                 .chain(repeat(Card::Again).take(again_count))
                 .collect(),
-            connected: Weak::new(),
             prepared_cards: None,
         };
         p.hand = p.draw_n_cards(draw_cards);

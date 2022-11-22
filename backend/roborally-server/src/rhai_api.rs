@@ -115,7 +115,7 @@ pub mod game_api {
 
     pub type PlayerDirection = roborally_structs::position::ContinuousDirection;
 
-    pub fn direction_up() -> PlayerDirection {
+    pub const fn direction_up() -> PlayerDirection {
         roborally_structs::position::Direction::Up.to_continuous()
     }
 
@@ -142,7 +142,7 @@ pub mod game_api {
 
     pub type MapPosition = roborally_structs::position::Position;
 
-    pub fn position_from_xy(x: i64, y: i64) -> MapPosition {
+    pub const fn position_from_xy(x: i64, y: i64) -> MapPosition {
         MapPosition {
             x: x as i16,
             y: y as i16,
@@ -151,12 +151,12 @@ pub mod game_api {
 
     #[rhai_fn(get = "x", pure)]
     pub fn position_get_x(pos: &mut MapPosition) -> i64 {
-        pos.x as i64
+        i64::from(pos.x)
     }
 
     #[rhai_fn(get = "y", pure)]
     pub fn position_get_y(pos: &mut MapPosition) -> i64 {
-        pos.y as i64
+        i64::from(pos.y)
     }
 
     #[rhai_fn(name = "+", pure)]

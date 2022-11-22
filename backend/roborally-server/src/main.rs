@@ -128,7 +128,6 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
     let mut games = games_lock.write().await;
     let mut games_list = Vec::new();
     games.retain(|name, game| {
-        let state = game.state.read().unwrap();
         if game
             .last_nobody_connected
             .lock()
@@ -137,12 +136,13 @@ async fn list_games_handler(games_lock: Games) -> impl Reply {
         {
             return false;
         }
-        let seats: Vec<Option<String>> = state
-            .players
+        let seats: Vec<Option<String>> = game
+            .player_connections
             .iter()
             .map(|player| {
                 player
-                    .connected
+                    .read()
+                    .unwrap()
                     .upgrade()
                     .map(|conn| conn.player_name.clone())
             })
@@ -291,8 +291,8 @@ async fn main() {
                 _ = term.recv() => (),
             }
             for game in games_lock.read().await.values() {
-                for player in &game.state.read().unwrap().players {
-                    if let Some(conn) = player.connected.upgrade() {
+                for player in &game.player_connections {
+                    if let Some(conn) = player.read().unwrap().upgrade() {
                         conn.sender
                             .send(SocketMessage::CloseWithNotice(
                                 "Server is shutting down. Sorry :(".to_owned(),

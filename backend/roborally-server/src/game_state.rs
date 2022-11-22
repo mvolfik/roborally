@@ -5,7 +5,7 @@ use roborally_structs::{
     game_state::{
         animated_state::{AnimationItem, RunningStateView},
         phase::RegisterMovePhase,
-        GameStatusInfo, GeneralState, ProgrammingState,
+        GameStatusInfo, ProgrammingState,
     },
     position::{ContinuousDirection, Direction, Position, Priority},
     tile::Tile,
@@ -41,27 +41,13 @@ pub struct MoveResult {
 }
 
 impl GameState {
-    pub fn send_general_state(&self) {
-        let player_connections = self
-            .players
-            .iter()
-            .map(|p| p.connected.upgrade())
-            .collect::<Vec<_>>();
-        let state = ServerMessage::GeneralState(GeneralState {
-            player_names: player_connections
-                .iter()
-                .map(|conn_opt| conn_opt.as_ref().map(|conn| conn.player_name.clone()))
-                .collect(),
-            status: self.status.clone(),
-        });
-        for conn in player_connections.into_iter().flatten() {
-            conn.sender.send(SendMessage(state.clone())).unwrap();
-        }
-    }
-
     pub fn send_programming_state_to_player(&self, player_i: usize) {
         let player = &self.players[player_i];
-        let Some(conn) = player.connected.upgrade() else {
+        let Some(conn) = self.game.upgrade().unwrap().player_connections[player_i]
+            .read()
+            .unwrap()
+            .upgrade()
+        else {
             return;
         };
         let state = ServerMessage::ProgrammingState(ProgrammingState {
@@ -88,8 +74,12 @@ impl GameState {
     }
 
     pub fn send_animation_item(&self, animations: &[Animation], include_state: bool) {
-        for player in &self.players {
-            let Some(conn) = player.connected.upgrade()
+        for (player, conn_lock) in self
+            .players
+            .iter()
+            .zip(self.game.upgrade().unwrap().player_connections.iter())
+        {
+            let Some(conn) = conn_lock.read().unwrap().upgrade()
             else {
                 continue;
             };
@@ -113,17 +103,6 @@ impl GameState {
                         .collect(),
                 }),
             });
-            conn.sender.send(SendMessage(state)).unwrap();
-        }
-    }
-
-    pub fn send_log(&self, log: &str) {
-        for player in &self.players {
-            let Some(conn) = player.connected.upgrade()
-            else {
-                continue;
-            };
-            let state = ServerMessage::GameLog(log.to_owned());
             conn.sender.send(SendMessage(state)).unwrap();
         }
     }

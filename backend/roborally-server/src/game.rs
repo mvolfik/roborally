@@ -1,4 +1,5 @@
 use std::{
+    iter::repeat_with,
     mem,
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
@@ -9,12 +10,18 @@ use rhai::{exported_module, Engine, Scope, AST};
 use roborally_structs::{
     card::Card,
     game_map::GameMap,
-    game_state::{phase::RegisterMovePhase, GameStatusInfo},
+    game_state::{phase::RegisterMovePhase, GameStatusInfo, GeneralState},
+    transport::ServerMessage,
 };
 use serde::Deserialize;
 use tokio::time::Instant;
 
-use crate::{game_state::GameState, player::Player, rhai_api::game_api};
+use crate::{
+    game_connection::{PlayerConnection, SocketMessage},
+    game_state::GameState,
+    player::Player,
+    rhai_api::game_api,
+};
 
 #[derive(Deserialize)]
 pub struct CardInitializationDefinition {
@@ -40,6 +47,7 @@ pub struct Game {
     /// Asset url, AST, scope
     pub cards: Vec<(String, Arc<AST>, Mutex<Scope<'static>>)>,
     pub last_nobody_connected: Mutex<Option<Instant>>,
+    pub player_connections: Vec<RwLock<Weak<PlayerConnection>>>,
     pub engine: Arc<Engine>,
     pub state: Arc<RwLock<GameState>>,
     /// Anything modifying the game state should lock this mutex before doing so.
@@ -120,6 +128,9 @@ impl Game {
             map,
             cards: Vec::with_capacity(card_definitions.len()),
             last_nobody_connected: Mutex::new(Some(Instant::now() + Duration::from_secs(60))),
+            player_connections: repeat_with(|| RwLock::new(Weak::new()))
+                .take(player_count)
+                .collect(),
             engine: Arc::new(engine),
             state,
             running_guard: tokio::sync::Mutex::new(()),
@@ -155,10 +166,30 @@ impl Game {
         let mut scope = Scope::new();
         scope.push_constant("PLAYER_COUNT", self.player_count as i64);
         scope.push_constant("ROUND_REGISTERS", self.round_registers as i64);
-        scope.push_constant("MAP_WIDTH", self.map.tiles.size().x as i64);
-        scope.push_constant("MAP_HEIGHT", self.map.tiles.size().y as i64);
+        scope.push_constant("MAP_WIDTH", i64::from(self.map.tiles.size().x));
+        scope.push_constant("MAP_HEIGHT", i64::from(self.map.tiles.size().y));
         scope.push_constant("GAME", Arc::clone(&self.state));
         scope
+    }
+
+    pub fn send_general_state(&self) {
+        let player_connections = self
+            .player_connections
+            .iter()
+            .map(|p| p.read().unwrap().upgrade())
+            .collect::<Vec<_>>();
+        let state = ServerMessage::GeneralState(GeneralState {
+            player_names: player_connections
+                .iter()
+                .map(|conn_opt| conn_opt.as_ref().map(|conn| conn.player_name.clone()))
+                .collect(),
+            status: self.state.read().unwrap().status.clone(),
+        });
+        for conn in player_connections.into_iter().flatten() {
+            conn.sender
+                .send(SocketMessage::SendMessage(state.clone()))
+                .unwrap();
+        }
     }
 
     /// Handle when a player submits their programmed registers for given round
@@ -273,7 +304,15 @@ impl Game {
                 }
                 let mut log = self.log.lock().unwrap();
                 if !log.is_empty() {
-                    state.send_log(&log);
+                    let msg =
+                        SocketMessage::SendMessage(ServerMessage::GameLog(mem::take(&mut log)));
+                    for conn_lock in &self.player_connections {
+                        let Some(conn) = conn_lock.read().unwrap().upgrade()
+                        else {
+                            continue;
+                        };
+                        conn.sender.send(msg.clone()).unwrap();
+                    }
                     *log = String::new();
                 }
             }
@@ -289,6 +328,7 @@ impl Game {
         }
         state.status = GameStatusInfo::Programming;
         state.send_programming_state_to_all();
-        state.send_general_state();
+        drop(state);
+        self.send_general_state();
     }
 }

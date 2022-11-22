@@ -13,7 +13,7 @@ use warp::ws::{Message, WebSocket};
 
 use crate::game::Game;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SocketMessage {
     CloseWithNotice(String),
     SendMessage(ServerMessage),
@@ -119,15 +119,13 @@ impl PlayerConnection {
         };
 
         let self_arc = {
-            let mut state = game.state.write().unwrap();
-            let Some(player) = state.players.get_mut(seat)
+            let Some(player) = game.player_connections.get(seat)
             else {
-                drop(state);
                 sender.send(CloseWithNotice("There aren't that many seats".to_owned())).unwrap();
                 return;
             };
-            if let Some(p) = player.connected.upgrade() {
-                drop(state);
+            let mut guard = player.write().unwrap();
+            if let Some(p) = guard.upgrade() {
                 sender
                     .send(CloseWithNotice(format!(
                         "{} is already connected to this seat",
@@ -143,9 +141,13 @@ impl PlayerConnection {
                 seat,
                 sender,
             });
-            player.connected = Arc::downgrade(&conn);
-            state.send_programming_state_to_player(seat);
-            state.send_general_state();
+            *guard = Arc::downgrade(&conn);
+            drop(guard);
+            game.state
+                .read()
+                .unwrap()
+                .send_programming_state_to_player(seat);
+            game.send_general_state();
             conn
         };
 
@@ -187,9 +189,7 @@ impl PlayerConnection {
                 }
             }
             info!("Ending receive loop for player {}", self_arc.player_name);
-            let game_arc = Arc::clone(&self_arc.game);
-            drop(self_arc);
-            game_arc.state.read().unwrap().send_general_state();
+            self_arc.game.send_general_state();
         });
     }
 }
