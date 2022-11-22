@@ -28,7 +28,6 @@ pub struct GameState {
     pub status: GameStatusInfo,
     pub players: Vec<Player>,
     pub game: Weak<Game>,
-    pub winner: Option<usize>,
     pub reboot_queue: Vec<usize>,
     /// It isn't great that this has to be here, but it would be too messy to pass this all over the place.
     /// Conversion into PlayerGameStateView needs to have access to this.
@@ -324,7 +323,6 @@ impl GameState {
             // are later introduced
             player.public_state.position.x = i16::MAX;
             self.force_move_to(player_i, reboot_token.0, reboot_token.1);
-
             self.send_animation_item(&[], true);
         }
         assert!(self.reboot_queue.is_empty());
@@ -585,10 +583,6 @@ impl GameState {
                 == Some(&player.public_state.position)
             {
                 player.public_state.checkpoint += 1;
-                if self.winner.is_none() && player.public_state.checkpoint == map.checkpoints.len()
-                {
-                    self.winner = Some(player_i);
-                }
                 self.send_animation_item(&[Animation::CheckpointVisited { player_i }], true);
             }
         }

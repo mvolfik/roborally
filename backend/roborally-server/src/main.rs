@@ -51,7 +51,6 @@ use std::{
     time::Duration,
 };
 
-use futures::future::join_all;
 use game::{Game, NewGameData};
 use game_connection::PlayerConnection;
 use http::StatusCode;
@@ -125,82 +124,61 @@ struct GameListItem {
     draw_cards: usize,
 }
 
-enum GameListResult {
-    ListItem(GameListItem),
-    Cleanup(String),
-}
-
 async fn list_games_handler(games_lock: Games) -> impl Reply {
     let mut games = games_lock.write().await;
-    let games_futures: Vec<_> = games
-        .iter_mut()
-        .map(async move |(game_name, game)| {
-            let state = game.state.read().unwrap();
-            // while this cleans the game up from the list before all players leave,
-            // that is not an issue - other players keep the game_arc reference as long
-            // as they are connected, and no new connections are allowed anyways
-            if state.winner.is_some()
-                || game
-                    .last_nobody_connected
-                    .lock()
-                    .unwrap()
-                    .is_some_and(|t| t.elapsed() > Duration::from_secs(300))
-            {
-                return GameListResult::Cleanup(game_name.clone());
-            }
-            let seats: Vec<Option<String>> = state
-                .players
-                .iter()
-                .map(|player| {
-                    player
-                        .connected
-                        .upgrade()
-                        .map(|conn| conn.player_name.clone())
-                })
-                .collect();
-            if seats.iter().all(Option::is_none) {
-                let mut last_nobody_connected_guard = game.last_nobody_connected.lock().unwrap();
-                if let Some(last_nobody_connected) = *last_nobody_connected_guard {
-                    if last_nobody_connected.elapsed() > Duration::from_secs(300) {
-                        return GameListResult::Cleanup(game_name.clone());
-                    }
-                } else {
-                    *last_nobody_connected_guard = Some(Instant::now());
-                }
-            }
-            GameListResult::ListItem(GameListItem {
-                seats,
-                map_name: game.map.name.clone(),
-                name: game_name.clone(),
-                cards_assets_names: [
-                    ("/assets/again.png".to_owned(), "Again".to_owned()),
-                    ("/assets/spam.png".to_owned(), "SPAM".to_owned()),
-                ]
-                .into_iter()
-                .chain(
-                    game.cards
-                        .iter()
-                        .map(|c| (c.0.clone(), c.1.source().unwrap().to_owned())),
-                )
-                .collect(),
-                card_pack_size: game.card_pack_size,
-                round_registers: game.round_registers,
-                draw_cards: game.draw_cards,
+    let mut games_list = Vec::new();
+    games.retain(|name, game| {
+        let state = game.state.read().unwrap();
+        if game
+            .last_nobody_connected
+            .lock()
+            .unwrap()
+            .is_some_and(|t| t.elapsed() > Duration::from_secs(300))
+        {
+            return false;
+        }
+        let seats: Vec<Option<String>> = state
+            .players
+            .iter()
+            .map(|player| {
+                player
+                    .connected
+                    .upgrade()
+                    .map(|conn| conn.player_name.clone())
             })
-        })
-        .collect();
-
-    let mut games_list: Vec<_> = join_all(games_futures)
-        .await
-        .into_iter()
-        .filter_map(|list_result| match list_result {
-            GameListResult::ListItem(item) => Some(item),
-            GameListResult::Cleanup(name) => {
-                games.remove(&name);
-                None
+            .collect();
+        if seats.iter().all(Option::is_none) {
+            let mut last_nobody_connected_guard = game.last_nobody_connected.lock().unwrap();
+            if let Some(last_nobody_connected) = *last_nobody_connected_guard {
+                if last_nobody_connected.elapsed() > Duration::from_secs(300) {
+                    return false;
+                }
+            } else {
+                *last_nobody_connected_guard = Some(Instant::now());
             }
-        })
-        .collect();
+        }
+        games_list.push(GameListItem {
+            seats,
+            map_name: game.map.name.clone(),
+            name: name.clone(),
+            cards_assets_names: [
+                ("/assets/again.png".to_owned(), "Again".to_owned()),
+                ("/assets/spam.png".to_owned(), "SPAM".to_owned()),
+            ]
+            .into_iter()
+            .chain(
+                game.cards
+                    .iter()
+                    .map(|c| (c.0.clone(), c.1.source().unwrap().to_owned())),
+            )
+            .collect(),
+            card_pack_size: game.card_pack_size,
+            round_registers: game.round_registers,
+            draw_cards: game.draw_cards,
+        });
+        true
+    });
+
     games_list.sort_by(|a, b| a.name.cmp(&b.name));
     warp::reply::json(&games_list)
 }

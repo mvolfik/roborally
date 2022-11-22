@@ -95,7 +95,6 @@ impl Game {
             status: GameStatusInfo::Programming,
             players,
             game: Weak::new(),
-            winner: None,
             reboot_queue: Vec::new(),
             running_state: (0, RegisterMovePhase::Checkpoints),
         }));
@@ -248,9 +247,9 @@ impl Game {
 
     fn run(&self) {
         use RegisterMovePhase::*;
+        let mut state = self.state.write().unwrap();
         for register_i in 0..self.round_registers {
             for register_phase in RegisterMovePhase::ORDER {
-                let mut state = self.state.write().unwrap();
                 state.running_state = (register_i, register_phase);
                 state.send_animation_item(&[], true);
                 match register_phase {
@@ -272,14 +271,14 @@ impl Game {
                     Lasers => state.execute_lasers(),
                     Checkpoints => state.execute_checkpoints(),
                 }
-                let log = mem::take(&mut *self.log.lock().unwrap());
+                let mut log = self.log.lock().unwrap();
                 if !log.is_empty() {
                     state.send_log(&log);
+                    *log = String::new();
                 }
             }
         }
 
-        let mut state = self.state.write().unwrap();
         for player in &mut state.players {
             player
                 .discard_pile
