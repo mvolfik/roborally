@@ -157,16 +157,9 @@ impl GameState {
         result
     }
 
-    pub fn mov(
-        &mut self,
-        player_i: usize,
-        direction: impl Into<Direction>,
-    ) -> Result<MoveResult, String> {
+    pub fn mov(&mut self, player_i: usize, direction: impl Into<Direction>) -> MoveResult {
         let map = &self.game.upgrade().unwrap().map;
-        let player = self
-            .players
-            .get_mut(player_i)
-            .ok_or_else(|| "There aren't that many players".to_owned())?;
+        let player = &mut self.players[player_i];
         let origin_pos = player.public_state.position;
 
         let origin_tile = match map.tiles.get(origin_pos) {
@@ -175,19 +168,19 @@ impl GameState {
                 typ: TileType::Void,
                 ..
             }) => {
-                return Ok(MoveResult {
+                return MoveResult {
                     moved: true,
                     rebooted: false,
-                })
+                }
             }
             Some(t) => t,
         };
         let direction = direction.into();
         if origin_tile.walls.get(direction) {
-            return Ok(MoveResult {
+            return MoveResult {
                 moved: false,
                 rebooted: false,
-            });
+            };
         }
         let target_pos = origin_pos.moved_in_direction(direction);
         let Some(target_tile) = map.tiles.get(target_pos)
@@ -195,36 +188,36 @@ impl GameState {
             // falling out of map
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return Ok(MoveResult { moved: true, rebooted: true });
+            return MoveResult { moved: true, rebooted: true };
         };
         if target_tile.walls.get(direction.rotated().rotated()) {
-            return Ok(MoveResult {
+            return MoveResult {
                 moved: false,
                 rebooted: false,
-            });
+            };
         }
         if target_tile.typ == TileType::Void {
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return Ok(MoveResult {
+            return MoveResult {
                 moved: true,
                 rebooted: true,
-            });
+            };
         }
 
         if let Some(player2_i) = self.player_at_position(target_pos) {
-            if !self.mov(player2_i, direction)?.moved {
-                return Ok(MoveResult {
+            if !self.mov(player2_i, direction).moved {
+                return MoveResult {
                     moved: false,
                     rebooted: false,
-                });
+                };
             }
         }
         self.players[player_i].public_state.position = target_pos;
-        Ok(MoveResult {
+        MoveResult {
             moved: true,
             rebooted: false,
-        })
+        }
     }
 
     pub fn force_move_to(
@@ -232,12 +225,9 @@ impl GameState {
         player_i: usize,
         pos: Position,
         pushing_direction: Direction,
-    ) -> Result<MoveResult, String> {
+    ) -> MoveResult {
         let map = &self.game.upgrade().unwrap().map;
-        let player = self
-            .players
-            .get_mut(player_i)
-            .ok_or_else(|| "There aren't that many players".to_owned())?;
+        let player = &mut self.players[player_i];
         if let None
         | Some(Tile {
             typ: TileType::Void,
@@ -246,10 +236,10 @@ impl GameState {
         {
             player.public_state.position = pos;
             self.reboot_queue.push(player_i);
-            return Ok(MoveResult {
+            return MoveResult {
                 moved: true,
                 rebooted: true,
-            });
+            };
         };
 
         if let Some(player2_i) = self.player_at_position(pos) && player2_i != player_i {
@@ -259,15 +249,14 @@ impl GameState {
                     pos.moved_in_direction(pushing_direction),
                     pushing_direction,
                 )
-                .unwrap()
                 .moved,
             );
         }
         self.players[player_i].public_state.position = pos;
-        Ok(MoveResult {
+        MoveResult {
             moved: true,
             rebooted: false,
-        })
+        }
     }
 
     /// Hide all players that should reboot, queue a state update, then move them one by one to the reboot token
@@ -298,8 +287,7 @@ impl GameState {
             // However, this would become needed if the Worm damage card (or other means of reboot)
             // are later introduced
             player.public_state.position.x = i16::MAX;
-            self.force_move_to(player_i, reboot_token.0, reboot_token.1)
-                .unwrap();
+            self.force_move_to(player_i, reboot_token.0, reboot_token.1);
 
             self.send_animation_item(&[], true);
         }
@@ -426,7 +414,7 @@ impl GameState {
             let pos = self.players[player_i].public_state.position;
             if let TileType::PushPanel(dir, divisor, remainder) = map.tiles.get(pos).unwrap().typ {
                 if (register_i + 1) % divisor == remainder {
-                    self.mov(player_i, dir).unwrap();
+                    self.mov(player_i, dir);
                     self.execute_reboots();
                 }
             }

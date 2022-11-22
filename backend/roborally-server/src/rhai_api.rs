@@ -13,9 +13,10 @@ pub mod game_api {
         direction: PlayerDirection,
     ) -> Result<MoveResult, Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
-        let res = game
-            .mov(player_i as usize, direction)
-            .map_err(Into::<Box<EvalAltResult>>::into)?;
+        if player_i as usize >= game.players.len() {
+            return Err("There aren't that many players".into());
+        }
+        let res = game.mov(player_i as usize, direction);
         game.execute_reboots();
         Ok(res)
     }
@@ -28,9 +29,10 @@ pub mod game_api {
         pushing_direction: PlayerDirection,
     ) -> Result<MoveResult, Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
-        let res = game
-            .force_move_to(player_i as usize, pos, pushing_direction.into())
-            .map_err(Into::<Box<EvalAltResult>>::into)?;
+        if player_i as usize >= game.players.len() {
+            return Err("There aren't that many players".into());
+        }
+        let res = game.force_move_to(player_i as usize, pos, pushing_direction.into());
         game.execute_reboots();
         Ok(res)
     }
