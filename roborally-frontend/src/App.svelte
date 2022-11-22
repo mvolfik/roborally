@@ -236,21 +236,28 @@
     <div class="intro-info">
       <p>
         This is a remake of the board game RoboRally, originally published by
-        <a href="https://wizards.com">Wizards of the Coast</a>, a game studio
-        now owned by Hasbro. First version of this project was created in March
-        &ndash; April 2022 as a high school graduation project by
-        <a href="https://mvolfik.github.io">Matěj Volf</a>. Since then,
-        occasional updates are made, usually (again) as school work. A few more
-        links:
+        <a target="_blank" rel="noopener" href="https://wizards.com"
+          >Wizards of the Coast</a
+        >, a game studio now owned by Hasbro. First version of this project was
+        created in March &ndash; April 2022 as a high school graduation project
+        by
+        <a target="_blank" href="https://mvolfik.github.io">Matěj Volf</a>.
+        Since then, occasional updates are made, usually (again) as school work.
+        A few more links:
       </p>
       <ul>
         <li>
-          <a href="https://en.wikipedia.org/wiki/RoboRally"
+          <a
+            target="_blank"
+            rel="noopener"
+            href="https://en.wikipedia.org/wiki/RoboRally"
             >RoboRally on Wikipedia</a
           >
         </li>
         <li>
           <a
+            target="_blank"
+            rel="noopener"
             href="https://www.hasbro.com/common/documents/60D52426B94D40B98A9E78EE4DD8BF94/3EA9626BCAE94683B6184BD7EA3F1779.pdf"
             >Original rules PDF from Hasbro website</a
           >
@@ -258,7 +265,11 @@
         <li>
           Source code (<a href="/source-code.tar.gz">.tar.gz</a>,
           <a href="/source-code.zip">.zip</a>,
-          <a href="https://github.com/mvolfik/roborally">GitHub</a>)
+          <a
+            target="_blank"
+            rel="noopener"
+            href="https://github.com/mvolfik/roborally">GitHub</a
+          >)
         </li>
       </ul>
       <details>
@@ -317,7 +328,9 @@
         <summary>Custom cards programming documentation</summary>
         <p>
           The game supports creating custom cards, which can be programmed with
-          the <a href="https://rhai.rs/">Rhai scripting language</a>.
+          the <a target="_blank" rel="noopener" href="https://rhai.rs/"
+            >Rhai scripting language</a
+          >.
         </p>
         <p>
           Your cards script must provide a function <code
@@ -336,106 +349,146 @@
         <p>The following global variables are available:</p>
         <ul>
           <li>
-            <code>const GAME: Game</code> - current state of the game. You can't
-            modify it directly, only using different methods, see below
+            <code>const GAME: Game</code>
+            <p>
+              Current state of the game. You can't modify it directly, only
+              using different methods, see below.
+            </p>
           </li>
           <li>
-            <code>const PLAYER_COUNT: int</code> - number of players in this game
+            <code>const PLAYER_COUNT: int</code>
+            <p>Number of players in this game.</p>
           </li>
           <li>
-            <code>const ROUND_REGISTERS: int</code> - number of registers (cards)
-            programmed and executed each round
+            <code>const ROUND_REGISTERS: int</code>
+            <p>
+              Number of registers (cards) programmed and executed each round.
+            </p>
           </li>
-          <li><code>const MAP_WIDTH: int</code> - width of the game map</li>
-          <li><code>const MAP_HEIGHT: int</code> - height of the game map</li>
+          <li>
+            <code>const MAP_WIDTH: int</code>
+            <p>Width of the game map.</p>
+          </li>
+          <li>
+            <code>const MAP_HEIGHT: int</code>
+            <p>Height of the game map.</p>
+          </li>
         </ul>
         <p>The following functions and operations are available:</p>
         <ul>
           <li>
-            <code
-              >Game.move_player_in_direction(player_i: int, direction:
-              PlayerDirection): MoveResult</code
-            > - moves the player by 1 tile in the given direction, eventually pushing
-            any players in the way and executing reboots immediately after
+            <code>
+              Game.move_player_in_direction(player_i: int, direction:
+              PlayerDirection): MoveResult
+            </code>
+            <p>
+              Moves the player by 1 tile in the given direction, eventually
+              pushing any players in the way and executing reboots immediately
+              after.
+            </p>
           </li>
           <li>
-            <code
-              >Game.force_move_player_to(player_i: int, pos: MapPosition,
-              pushing_direction: PlayerDirection): MoveResult</code
-            > - moves the player to the given position, eventually pushing away a
-            player already standing on that tile in the given direction, and executing
-            reboots immediately after
+            <code>
+              Game.force_move_player_to(player_i: int, pos: MapPosition,
+              pushing_direction: PlayerDirection): MoveResult
+            </code>
+            <p>
+              Moves the player to the given position, eventually pushing away a
+              player already standing on that tile in the given direction, and
+              executing reboots immediately after.
+            </p>
           </li>
           <li>
             <code>Game.get_player_at_position(pos: MapPosition): () | int</code>
-            - returns the number of player at given position, or the unit type if
-            there's none
+            <p>
+              Returns the number of player at given position, or the unit type
+              if there's none.
+            </p>
           </li>
           <li>
-            <code>Game.get_player_position(player_i: int): MapPosition</code> - returns
-            the position of given player
+            <code>Game.get_player_position(player_i: int): MapPosition</code>
+            <p>Returns the position of given player.</p>
           </li>
           <li>
-            <code
-              >Game.get_player_direction(player_i: int): PlayerDirection</code
-            > - returns the direction of given player
+            <code>
+              Game.get_player_direction(player_i: int): PlayerDirection
+            </code>
+            <p>Returns the direction of given player.</p>
           </li>
           <li>
-            <code
-              >Game.set_player_direction(player_i: int, direction:
-              PlayerDirection)</code
-            >
-            - sets the direction of given player (note that
-            <code>PlayerDirection</code> is sensitive to rotation by multiples of
-            360 degrees, so always reuse player's direction and only rotate it a
-            few times)
+            <code>
+              Game.set_player_direction(player_i: int, direction:
+              PlayerDirection)
+            </code>
+            <p>
+              Sets the direction of given player. (Note that
+              <code>PlayerDirection</code>
+              is sensitive to rotation by multiples of 360 degrees, so always reuse
+              player's direction and only rotate it a few times.)
+            </p>
           </li>
           <li>
-            <code>Game.is_void_at(position: MapPosition): bool</code> - returns true
-            if the given position is a void tile (hole in map or out of bounds)
+            <code>Game.is_void_at(position: MapPosition): bool</code>
+            <p>
+              Returns true if the given position is a void tile (hole in map or
+              out of bounds).
+            </p>
           </li>
           <li>
-            <code>(getter) MoveResult.moved: bool</code> - if the player moved
+            <code>(getter) MoveResult.moved: bool</code>
+            <p>If the player moved.</p>
           </li>
           <li>
-            <code>(getter) MoveResult.rebooted: bool</code> - if the player rebooted
-            as a result of this move
+            <code>(getter) MoveResult.rebooted: bool</code>
+            <p>If the player rebooted as a result of this move.</p>
           </li>
           <li>
-            <code>direction_up(): PlayerDirection</code> - creates a new direction
-            upwards
+            <code>direction_up(): PlayerDirection</code>
+            <p>Creates a new direction upwards.</p>
           </li>
           <li>
-            <code>(operator) PlayerDirection + int: PlayerDirection</code> -
-            creates a new direction rotated N times 90 degrees clockwise:
-            <code>direction_up() + 3</code> returns a direction to the left
+            <code>(operator) PlayerDirection + int: PlayerDirection</code>
+            <p>
+              Creates a new direction rotated N times 90 degrees clockwise:
+              <code>direction_up() + 3</code> returns a direction to the left.
+            </p>
           </li>
           <li>
-            <code>(operator) PlayerDirection - int: PlayerDirection</code> - same
-            as above but counter-clockwise
+            <code>(operator) PlayerDirection - int: PlayerDirection</code>
+            <p>Same as above but counter-clockwise.</p>
           </li>
           <li>
-            <code>(getter) PlayerDirection.direction: int</code> - returns a number
-            indicating the direction: 0 &rarr; Up, 1 &rarr; Right, 2 &rarr; Down,
-            3 &rarr; Left
+            <code>(getter) PlayerDirection.direction: int</code>
+            <p>
+              Returns a number indicating the direction: Up&rarr;0,
+              Right&rarr;1, Down&rarr;2, Left&rarr;3.
+            </p>
           </li>
           <li>
-            <code>position_from_xy(x: int, y: int): MapPosition</code> - creates
-            a new position object from <code>x</code> and <code>y</code>
-            coordinates (top left corner tile of the game map has coordinates
-            <code>0,0</code>; <code>y</code> increases down)
+            <code>position_from_xy(x: int, y: int): MapPosition</code>
+            <p>
+              Creates a new position object from <code>x</code> and
+              <code>y</code> coordinates (top left corner tile of the game map
+              has coordinates <code>0,0</code>; <code>y</code> increases down).
+            </p>
           </li>
           <li>
-            <code>(getter) MapPosition.x: int</code> - gets the <code>x</code> component
-            of the position coordinates
+            <code>(getter) MapPosition.x: int</code>
+            <p>
+              Gets the <code>x</code> component of the position coordinates.
+            </p>
           </li>
           <li>
-            <code>(getter) MapPosition.y: int</code> - gets the <code>y</code> component
-            of the position coordinates
+            <code>(getter) MapPosition.y: int</code>
+            <p>
+              Gets the <code>y</code> component of the position coordinates.
+            </p>
           </li>
           <li>
-            <code>(operator) MapPosition + PlayerDirection: MapPosition</code> -
-            creates a new position moved by 1 tile in the given direction
+            <code>(operator) MapPosition + PlayerDirection: MapPosition</code>
+            <p>
+              Creates a new position moved by 1 tile in the given direction.
+            </p>
           </li>
         </ul>
       </details>
@@ -810,6 +863,9 @@
   code {
     font-size: 1.1em;
     font-family: "Ubuntu Mono", monospace;
-    white-space: pre;
+    white-space: nowrap;
+  }
+  li > code + p {
+    margin: 0.3rem 0 1rem 1rem;
   }
 </style>
