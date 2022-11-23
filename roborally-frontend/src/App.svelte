@@ -327,10 +327,18 @@
       <details>
         <summary>Custom cards programming documentation</summary>
         <p>
-          The game supports creating custom cards, which can be programmed with
-          the <a target="_blank" rel="noopener" href="https://rhai.rs/"
+          When you create a new game, by default the same set of movement cards
+          as in the original game will be used. But if you want to make your
+          game more interesting, you can create your own cards - click the <em
+            >Edit</em
+          >
+          button in the <em>New game</em> dialog window. The cards are
+          programmed with the
+          <a target="_blank" rel="noopener" href="https://rhai.rs/"
             >Rhai scripting language</a
-          >.
+          >, and all the default cards are implemented with it, so you can use
+          these as a starting point and practical examples. Here is a
+          documentation of what should the card scripts look like.
         </p>
         <p>
           Your cards script must provide a function <code
@@ -491,6 +499,13 @@
             </p>
           </li>
         </ul>
+        <p>
+          This API obviously doesn't allow you to do everything – you can't
+          interact with game tiles, shoot, atomically move multiple players at
+          once or replace or execute other cards. I'm not opposed to adding
+          this, I just didn't (yet?) find the time for it. The game is
+          open-source, so pull requests are welcome :)
+        </p>
       </details>
     </div>
   </div>
