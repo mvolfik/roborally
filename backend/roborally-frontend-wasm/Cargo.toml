@@ -1,6 +1,7 @@
 [package]
 authors = ["Matěj Volf <mat.volfik@gmail.com>"]
 edition = "2021"
+license = "AGPL-3.0-only"
 name = "roborally-frontend-wasm"
 version = "0.1.0"
 
