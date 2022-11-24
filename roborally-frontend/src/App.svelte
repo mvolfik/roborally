@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { cardExamples } from "./cardExamples";
   import { DEFAULT_CARDS, NEW_CARD } from "./defaultCards";
   import Dialog from "./Dialog.svelte";
 
@@ -342,19 +343,15 @@
         </p>
         <p>
           Your cards script must provide a function <code
-            >execute(player_i, register_i) {"{...}"}</code
+            >execute(player_i, register_i) &lbrace;...&rbrace;</code
           >. Both arguments are integers (and obviously index from zero).
           <code>register_i</code> is probably rarely useful, but if you want your
           card to do different things on different turns, there you go. The function
           shouldn't return any value.
         </p>
         <p>
-          At the beginning of a game, a Rhai Scope is created for each card,
-          which is persistent over the course of the whole game. Therefore you
-          have a shared scope for a card across all players, but scopes for
-          different cards are isolated.
+          The following variables are available to the <code>execute</code> function:
         </p>
-        <p>The following global variables are available:</p>
         <ul>
           <li>
             <code>const GAME: Game</code>
@@ -382,6 +379,15 @@
             <p>Height of the game map.</p>
           </li>
         </ul>
+        <p>
+          Note that all these variables are in a custom scope, so they are <em
+            >&ldquo;global&rdquo;</em
+          >
+          (you can access them directly, without anything like
+          <code>this.GAME</code>), but are only in scope for the
+          <code>execute</code> function, so if needed, you will need to pass them
+          as arguments to any other functions you declare.
+        </p>
         <p>The following functions and operations are available:</p>
         <ul>
           <li>
@@ -506,6 +512,44 @@
           this, I just didn't (yet?) find the time for it. The game is
           open-source, so pull requests are welcome :)
         </p>
+        <p>
+          Here's a few examples of interesting card scripts (click on the code
+          block to copy it to your clipboard):
+        </p>
+        <ul>
+          {#each cardExamples as { name, code }}
+            <li>
+              <p>
+                {name}
+              </p>
+              <div
+                class="code"
+                on:click={function () {
+                  const selection = window.getSelection();
+                  selection.removeAllRanges();
+                  selection.selectAllChildren(this);
+                  navigator.clipboard.writeText(selection.toString());
+                }}
+              >
+                {@html code
+                  .split("\n")
+                  .map((l) =>
+                    l.replace(/^ */, (m) =>
+                      Array(m.length).fill("&nbsp;").join("")
+                    )
+                  )
+                  .join("<br />")}
+              </div>
+            </li>
+          {/each}
+          <li>
+            <a
+              href="https://github.com/mvolfik/roborally/blob/master/roborally-frontend/src/cardExamples.ts"
+              target="_blank"
+              rel="noopener">Contribute yours!</a
+            >
+          </li>
+        </ul>
       </details>
     </div>
   </div>
@@ -771,7 +815,7 @@
     overflow: auto;
   }
   p {
-    margin: 0 0 1rem 0;
+    margin: 0.5rem 0;
   }
   table {
     width: 100%;
@@ -814,8 +858,10 @@
   }
 
   .intro-info {
-    max-width: 60rem;
     margin-top: 5rem;
+  }
+  .intro-info p {
+    max-width: 60rem;
   }
 
   .card-pack-editor {
@@ -875,12 +921,22 @@
     padding: 0;
   }
 
-  code {
-    font-size: 1.1em;
+  li > code:first-child,
+  li > p + div.code:last-child {
     font-family: "Ubuntu Mono", monospace;
+    font-size: 1.1em;
     white-space: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    display: block;
+    padding-bottom: 0.5rem;
   }
-  li > code + p {
+  li > code + p:last-child {
     margin: 0.3rem 0 1rem 1rem;
+  }
+  li > p + div.code:last-child {
+    background-color: #eee;
+    padding: 0.5rem;
+    font-size: 1em;
   }
 </style>
