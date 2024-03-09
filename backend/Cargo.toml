@@ -1,6 +1,7 @@
 [workspace]
 default-members = ["roborally-server", "roborally-frontend-wasm"]
 members = ["roborally-structs", "roborally-server", "roborally-frontend-wasm"]
+resolver = "2"
 
 [profile.release]
 opt-level = "s"

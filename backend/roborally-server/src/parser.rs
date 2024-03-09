@@ -29,6 +29,12 @@ fn format_parse_error(name: &str, message: &str, value: &str) -> ParseError {
 #[derive(Debug)]
 pub struct ParseError(String);
 
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub trait Parse: Sized {
     fn parse(value: &str, name: &str) -> Result<Self, ParseError>;
 }

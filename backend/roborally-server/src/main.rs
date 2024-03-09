@@ -28,10 +28,8 @@
 #![feature(pattern)]
 #![feature(const_precise_live_drops)]
 #![feature(async_closure)]
-#![feature(array_zip)]
 #![feature(never_type)]
 #![feature(let_chains)]
-#![feature(is_some_and)]
 #![feature(iter_intersperse)]
 
 mod game;
@@ -92,8 +90,7 @@ async fn new_game_handler(maps: Maps, games_lock: Games, mut data: NewGameData) 
     if game_name.len() > 50 {
         return with_status("Game name is too long".to_owned(), StatusCode::BAD_REQUEST);
     }
-    let Some(map) = maps.get(&data.map_name)
-    else {
+    let Some(map) = maps.get(&data.map_name) else {
         return with_status("Unknown map".to_owned(), StatusCode::BAD_REQUEST);
     };
     let game = match Game::new(map.clone(), data) {
@@ -205,7 +202,10 @@ async fn main() {
                     .unwrap()
                     .read_to_string(&mut buffer)
                     .unwrap();
-                let map = GameMap::parse(&buffer, "").unwrap();
+                let map = match GameMap::parse(&buffer, "") {
+                    Ok(map) => map,
+                    Err(e) => panic!("Error parsing map: {e}"),
+                };
                 (map.name.clone(), map)
             })
             .collect(),
