@@ -79,8 +79,7 @@ impl GameState {
             .iter()
             .zip(self.game.upgrade().unwrap().player_connections.iter())
         {
-            let Some(conn) = conn_lock.read().unwrap().upgrade()
-            else {
+            let Some(conn) = conn_lock.read().unwrap().upgrade() else {
                 continue;
             };
             let state = ServerMessage::AnimatedState(AnimationItem {
@@ -174,12 +173,17 @@ impl GameState {
             );
         }
         let target_pos = origin_pos.moved_in_direction(direction);
-        let Some(target_tile) = map.tiles.get(target_pos)
-        else {
+        let Some(target_tile) = map.tiles.get(target_pos) else {
             // falling out of map
             player.public_state.position = target_pos;
             self.reboot_queue.push(player_i);
-            return (MoveResult { moved: true, rebooted: true }, Vec::new());
+            return (
+                MoveResult {
+                    moved: true,
+                    rebooted: true,
+                },
+                Vec::new(),
+            );
         };
         if target_tile.walls.get(direction.rotated().rotated()) {
             return (
@@ -256,7 +260,9 @@ impl GameState {
             };
         };
 
-        if let Some(player2_i) = self.player_at_position(pos) && player2_i != player_i {
+        if let Some(player2_i) = self.player_at_position(pos)
+            && player2_i != player_i
+        {
             assert!(
                 self.force_move_to(
                     player2_i,
@@ -328,8 +334,8 @@ impl GameState {
                 typ: TileType::Belt(is_fast, belt_dir),
                 walls,
             }) = game.map.tiles.get(player_pos)
-            && *is_fast == fast
-            && !walls.get(*belt_dir)
+                && *is_fast == fast
+                && !walls.get(*belt_dir)
             // is on belt and can leave current tile
             {
                 let new_pos = player_pos.moved_in_direction(*belt_dir);
@@ -341,7 +347,7 @@ impl GameState {
                         typ: TileType::Belt(is_fast2, dir2),
                         ..
                     }) = new_tile
-                    && *is_fast2 == fast
+                        && *is_fast2 == fast
                     {
                         if *dir2 == belt_dir.rotated() {
                             player_dir.rotated()
@@ -382,7 +388,10 @@ impl GameState {
                             let Some(Tile {
                                 typ: TileType::Belt(_, direction),
                                 ..
-                            }) = game.map.tiles.get(player_state.position) else { unreachable!() };
+                            }) = game.map.tiles.get(player_state.position)
+                            else {
+                                unreachable!()
+                            };
                             animations.push(Animation::AttemptedMove {
                                 player_i,
                                 direction: *direction,

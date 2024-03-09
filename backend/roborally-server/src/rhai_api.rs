@@ -79,8 +79,7 @@ pub mod game_api {
         direction: PlayerDirection,
     ) -> Result<(), Box<EvalAltResult>> {
         let mut game = game_lock.write().unwrap();
-        let Some(p) = game.players.get_mut(player_i as usize)
-        else {
+        let Some(p) = game.players.get_mut(player_i as usize) else {
             return Err("There aren't that many players".into());
         };
         p.public_state.direction = direction;

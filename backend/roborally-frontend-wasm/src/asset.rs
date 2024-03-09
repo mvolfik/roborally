@@ -138,9 +138,11 @@ impl From<GameMap> for AssetMap {
                                     .enumerate()
                             {
                                 if let Some(Tile {
-                                        typ: Belt(is_fast2, dir2),
-                                        ..
-                                    }) = m.tiles.get(pos.moved_in_direction(possibly_incoming_belt_direction))
+                                    typ: Belt(is_fast2, dir2),
+                                    ..
+                                }) = m
+                                    .tiles
+                                    .get(pos.moved_in_direction(possibly_incoming_belt_direction))
                                     && *is_fast2 == is_fast
                                     && *dir2 == possibly_incoming_belt_direction.rotated().rotated()
                                 {
@@ -186,32 +188,34 @@ impl From<GameMap> for AssetMap {
                                     flip_x: !is_clockwise,
                                     ..Effects::default()
                                 },
-                            }
+                            },
                         ],
                         PushPanel(dir, div, remainder) => {
                             let (text_direction, translate_y) = if dir == Direction::Down {
-                                (Direction::Up,33.5)
+                                (Direction::Up, 33.5)
                             } else {
                                 (dir, -2.5)
                             };
-                            vec![Asset {
-                                value: "push-panel.png".to_owned(),
-                                is_text: false,
-                                effects: Effects {
-                                    rotate: dir.to_continuous(),
-                                    ..Effects::default()
+                            vec![
+                                Asset {
+                                    value: "push-panel.png".to_owned(),
+                                    is_text: false,
+                                    effects: Effects {
+                                        rotate: dir.to_continuous(),
+                                        ..Effects::default()
+                                    },
                                 },
-                            },
-                            Asset {
-                                value: format!("{div}n+{remainder}"),
-                                is_text: true,
-                                effects: Effects {
-                                    rotate: text_direction.to_continuous(),
-                                    scale: 1.3,
-                                    translate: Some((12.5, translate_y)),
-                                    ..Effects::default()
+                                Asset {
+                                    value: format!("{div}n+{remainder}"),
+                                    is_text: true,
+                                    effects: Effects {
+                                        rotate: text_direction.to_continuous(),
+                                        scale: 1.3,
+                                        translate: Some((12.5, translate_y)),
+                                        ..Effects::default()
+                                    },
                                 },
-                            }]
+                            ]
                         }
                     };
 

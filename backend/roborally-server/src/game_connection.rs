@@ -112,16 +112,20 @@ impl PlayerConnection {
         use SocketMessage::*;
         let (w, mut reader) = socket.split();
         let sender = create_sender(w);
-        let Some(game) = game_opt
-        else {
-            sender.send(CloseWithNotice("Game with this ID doesn't exist".to_owned())).unwrap();
+        let Some(game) = game_opt else {
+            sender
+                .send(CloseWithNotice(
+                    "Game with this ID doesn't exist".to_owned(),
+                ))
+                .unwrap();
             return;
         };
 
         let self_arc = {
-            let Some(player) = game.player_connections.get(seat)
-            else {
-                sender.send(CloseWithNotice("There aren't that many seats".to_owned())).unwrap();
+            let Some(player) = game.player_connections.get(seat) else {
+                sender
+                    .send(CloseWithNotice("There aren't that many seats".to_owned()))
+                    .unwrap();
                 return;
             };
             let mut guard = player.write().unwrap();

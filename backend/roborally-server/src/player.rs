@@ -8,7 +8,7 @@ use roborally_structs::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{game::CardInitializationDefinition};
+use crate::game::CardInitializationDefinition;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Player {

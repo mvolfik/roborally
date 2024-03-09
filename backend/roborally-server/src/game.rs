@@ -307,8 +307,7 @@ impl Game {
                     let msg =
                         SocketMessage::SendMessage(ServerMessage::GameLog(mem::take(&mut log)));
                     for conn_lock in &self.player_connections {
-                        let Some(conn) = conn_lock.read().unwrap().upgrade()
-                        else {
+                        let Some(conn) = conn_lock.read().unwrap().upgrade() else {
                             continue;
                         };
                         conn.sender.send(msg.clone()).unwrap();
