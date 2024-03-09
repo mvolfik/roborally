@@ -51,25 +51,20 @@ impl std::fmt::Display for Effects {
             let mask = sides
                 .to_items()
                 .into_iter()
-                .filter_map(|(dir, is_shown)| {
-                    is_shown.then(|| {
-                        format!(
-                            "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
-                            if self.flip_x { -1 } else { 1 }
-                                * (dir.to_continuous() - self.rotate).get_rotation()
-                        )
-                    })
+                .filter(|(_, is_shown)| *is_shown)
+                .map(|(dir, _)| {
+                    format!(
+                        "linear-gradient({}deg, #0000 70%, #0004 85%, #000)",
+                        if self.flip_x { -1 } else { 1 }
+                            * (dir.to_continuous() - self.rotate).get_rotation()
+                    )
                 })
                 .intersperse_with(|| ",".to_owned())
                 .collect::<String>();
             if mask.is_empty() {
                 write!(f, "opacity:0;")?;
             } else {
-                write!(
-                    f,
-                    "mask-image:{mask};-webkit-mask-image:{mask};",
-                    mask = mask
-                )?;
+                write!(f, "mask-image:{mask};-webkit-mask-image:{mask};",)?;
             }
         }
         Ok(())

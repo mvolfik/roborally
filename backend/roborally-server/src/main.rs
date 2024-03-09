@@ -121,9 +121,8 @@ struct GameListItem {
 }
 
 async fn list_games_handler(games_lock: Games) -> impl Reply {
-    let mut games = games_lock.write().await;
     let mut games_list = Vec::new();
-    games.retain(|name, game| {
+    games_lock.write().await.retain(|name, game| {
         if game
             .last_nobody_connected
             .lock()
@@ -289,7 +288,13 @@ async fn main() {
                 _ = tokio::signal::ctrl_c() => (),
                 _ = term.recv() => (),
             }
-            for game in games_lock.read().await.values() {
+            let games = games_lock
+                .read()
+                .await
+                .values()
+                .map(Arc::clone)
+                .collect::<Vec<_>>();
+            for game in games {
                 for player in &game.player_connections {
                     if let Some(conn) = player.read().unwrap().upgrade() {
                         conn.sender
