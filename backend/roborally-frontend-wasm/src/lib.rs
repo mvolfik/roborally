@@ -41,7 +41,6 @@ use roborally_structs::{
     transport::{wrapper::ServerMessageWrapper, ClientMessage, ServerMessage},
 };
 
-use std::convert::Into;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 /* ##### INIT ##### */

@@ -3,7 +3,7 @@ WORKDIR /builder
 RUN rustup override set nightly
 RUN rustup target add --toolchain nightly wasm32-unknown-unknown
 
-RUN cargo install --git https://github.com/mvolfik/wasm-pack --branch master-plus-937
+RUN cargo install --locked wasm-pack
 
 RUN mkdir -p ./backend/roborally-structs/src \
              ./backend/roborally-frontend-wasm/src \

@@ -51,14 +51,13 @@ use std::{
 
 use game::{Game, NewGameData};
 use game_connection::PlayerConnection;
-use http::StatusCode;
 use roborally_structs::{
     game_map::GameMap,
     logging::{self, info},
 };
 use serde::{Deserialize, Serialize};
 use tokio::{select, sync::RwLock, time::Instant};
-use warp::{reply::with_status, Filter, Reply};
+use warp::{http::StatusCode, reply::with_status, Filter, Reply};
 
 use crate::{game_connection::SocketMessage, parser::Parse};
 
