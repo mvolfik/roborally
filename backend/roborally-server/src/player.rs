@@ -81,15 +81,14 @@ impl Player {
             }
             // did not find this card (unused) in hand
             return Err(format!(
-                "No cheating! {:?} isn't in your hand (enough times)",
-                picked_card
+                "No cheating! {picked_card:?} isn't in your hand (enough times)"
             ));
         }
 
         self.prepared_cards = Some(cards);
         self.hand = mem::take(&mut self.hand)
             .into_iter()
-            .zip(used_hand_indexes.into_iter())
+            .zip(used_hand_indexes)
             .filter_map(|(card, used)| (!used).then_some(card))
             .collect();
 

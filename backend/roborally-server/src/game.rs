@@ -52,7 +52,7 @@ pub struct Game {
     pub state: Arc<RwLock<GameState>>,
     /// Anything modifying the game state should lock this mutex before doing so.
     ///
-    /// This is used alongside the state RwLock, because unfortunately .run() is unable to hold the RwLock the entire time
+    /// This is used alongside the state `RwLock`, because unfortunately `.run()` is unable to hold the `RwLock` the entire time
     running_guard: tokio::sync::Mutex<()>,
     pub log: Arc<Mutex<String>>,
     pub round_registers: usize,

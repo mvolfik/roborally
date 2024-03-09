@@ -30,7 +30,7 @@ pub struct GameState {
     pub game: Weak<Game>,
     pub reboot_queue: Vec<usize>,
     /// It isn't great that this has to be here, but it would be too messy to pass this all over the place.
-    /// Conversion into PlayerGameStateView needs to have access to this.
+    /// Conversion into `PlayerGameStateView` needs to have access to this.
     pub running_state: (usize, RegisterMovePhase),
 }
 
@@ -518,10 +518,8 @@ impl GameState {
         let bullet_starts: Vec<_> = self
             .players
             .iter()
-            .filter_map(|p| {
-                (!p.public_state.is_rebooting)
-                    .then(|| (p.public_state.direction.into(), p.public_state.position))
-            })
+            .filter(|&p| !p.public_state.is_rebooting)
+            .map(|p| (p.public_state.direction.into(), p.public_state.position))
             .collect();
         for (direction, start_position) in bullet_starts {
             let mut bullet_pos = start_position;
